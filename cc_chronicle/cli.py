@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import ChronicleError, __version__, rclone
+from . import ChronicleError, __version__, doctor, rclone, secrets
 from . import config as config_mod
 from .backup import backup
 from .restore import Restorer, remote_sessions
@@ -50,8 +50,23 @@ def cmd_init(args) -> int:
 
 
 def cmd_backup(args) -> int:
-    backup(_load(args), dry_run=args.dry_run)
+    backup(_load(args), dry_run=args.dry_run, strict_secrets=args.strict_secrets)
     return 0
+
+
+def cmd_scan(args) -> int:
+    report = secrets.scan(_load(args))
+    print(secrets.summary_line(report))
+    for path, counts in sorted(report.findings.items()):
+        kinds = ", ".join(f"{name} ×{n}" for name, n in sorted(counts.items()))
+        print(f"  {path}   {kinds}")
+    if report.findings:
+        print("Values are never shown. What to do: docs/SECURITY.md (rotate the keys; consider an encrypted remote).")
+    return 0
+
+
+def cmd_doctor(args) -> int:
+    return doctor.run(Path(args.config) if args.config else None)
 
 
 def cmd_status(args) -> int:
@@ -112,7 +127,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("backup", help="upload memory, sessions, plans and prompt history")
     p.add_argument("--dry-run", action="store_true", help="show what would be uploaded; change nothing")
+    p.add_argument("--strict-secrets", action="store_true",
+                   help="upload nothing if new or changed files contain likely secrets")
     p.set_defaults(func=cmd_backup)
+
+    p = sub.add_parser("scan", help="list files that contain likely secrets (values are never shown)")
+    p.set_defaults(func=cmd_scan)
+
+    p = sub.add_parser("doctor", help="check rclone, the config, the remote, sharing and the last backup")
+    p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("status", help="last backup, and what a backup would upload now")
     p.set_defaults(func=cmd_status)

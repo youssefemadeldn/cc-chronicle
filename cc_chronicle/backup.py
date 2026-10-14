@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import ChronicleError, __version__, rclone, stage
+from . import ChronicleError, __version__, privacy, rclone, secrets, stage
 from .config import Config, state_dir
 
 REMOTE_README = Path(__file__).with_name("remote_readme.md")
@@ -29,6 +29,8 @@ class BackupResult:
     actions: dict = field(default_factory=dict)
     memory_folders: int = 0
     staged: stage.StageSummary = field(default_factory=stage.StageSummary)
+    secrets: secrets.ScanReport = field(default_factory=secrets.ScanReport)
+    privacy: privacy.PrivacyResult | None = None
 
 
 def run_id() -> str:
@@ -39,7 +41,7 @@ def log_path(run: str, kind: str) -> Path:
     return state_dir() / "logs" / f"{run}-{kind}.log"
 
 
-def backup(cfg: Config, *, dry_run: bool = False, out=print) -> BackupResult:
+def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, out=print) -> BackupResult:
     claude = cfg.claude_dir
     if not (claude / "projects").is_dir():
         raise ChronicleError(f"no Claude Code data at {claude} (set claude_dir in the config)")
@@ -48,6 +50,18 @@ def backup(cfg: Config, *, dry_run: bool = False, out=print) -> BackupResult:
     progress = sys.stdout.isatty() and not dry_run and out is print
     note = "  (dry run: nothing is uploaded)" if dry_run else ""
     out(f"== backup {claude} → {cfg.dest}{note}")
+
+    result.secrets = secrets.scan(cfg)
+    out(f"  {'secrets':<14} {secrets.summary_line(result.secrets)}")
+    if result.secrets.findings:
+        out(f"  {'':<14} list them: cc-chronicle scan · what to do: docs/SECURITY.md")
+    abort = strict_secrets or cfg.secrets_on_found == "abort"
+    if abort and result.secrets.new_findings:
+        message = (f"{len(result.secrets.new_findings)} new or changed file(s) contain likely secrets; "
+                   f"nothing was uploaded (secrets_on_found=abort). Run: cc-chronicle scan")
+        if not dry_run:
+            raise ChronicleError(message)
+        out(f"  {'':<14} a real backup would stop here: {message}")
 
     def step(name: str, *args: str, **kwargs) -> None:
         n = rclone.transfer(*args, log_file=result.log_file, dry_run=dry_run, progress=progress, **kwargs)
@@ -90,6 +104,12 @@ def backup(cfg: Config, *, dry_run: bool = False, out=print) -> BackupResult:
     if not dry_run:
         rclone.rcat(f"{cfg.dest}/last-backup.{cfg.machine}.json", stamp(cfg, result))
         out(f"  {'stamp':<14} last-backup.{cfg.machine}.json")
+        result.privacy = privacy.check(cfg)
+        if result.privacy.status == "shared":
+            out(f"  !! SHARING    the archive folder is shared: {', '.join(result.privacy.shared_with)}")
+            out(f"  {'':<14} it holds private conversations; remove that sharing in the storage provider")
+        elif result.privacy.status == "private":
+            out(f"  {'sharing':<14} private (only the owner has access)")
     out(f"== done. log: {result.log_file}")
     return result
 
