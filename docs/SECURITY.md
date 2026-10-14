@@ -18,7 +18,7 @@ Before every backup, cc-chronicle scans every file it is about to upload for wel
   - run `cc-chronicle backup --strict-secrets`, or
   - set `secrets_on_found = abort` in the config.
 
-  Files already archived don't block later runs.
+  Only files that are new or changed since the last scan count. A file that an earlier backup or `cc-chronicle scan` already reported doesn't block later runs, so running `scan` is how you mark the current findings as reviewed.
 - It is pattern-based. It **can miss** secrets in unusual formats (passwords, connection strings, custom tokens) and **can flag** harmless text. Treat a clean scan as "nothing obvious", not as "nothing at all".
 
 **If it finds something:** assume the secret is exposed and **rotate it** at its provider. That's the real fix; deleting it from a transcript isn't. Then avoid printing secrets in sessions: reference environment variables instead of pasting values.
