@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install rclone (Linux)
+        if: runner.os == 'Linux'
+        run: curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Install rclone (macOS)
+        if: runner.os == 'macOS'
+        run: brew install rclone
+
+      - name: Install dev dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: CLI smoke test
+        run: |
+          bin/cc-chronicle --version
+          bin/cc-chronicle --help >/dev/null
+          sh -n install.sh
