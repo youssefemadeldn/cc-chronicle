@@ -1,4 +1,9 @@
-# cc-chronicle
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-dark.svg">
+    <img alt="cc-chronicle" src="assets/brand/lockup-light.svg" width="460">
+  </picture>
+</p>
 
 **Never lose a Claude Code session.** cc-chronicle archives your Claude Code memory and session history to storage you control (Google Drive, Dropbox, OneDrive, S3, or any of rclone's 70+ backends), filed by month, and brings it back when you need it.
 

@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Source of social-preview.png (1280×640), the image GitHub shows when the repo link is shared.
+     Render with ./render.sh. Keep important content inside the central area: some sites crop the edges. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    background: #14213D;
+    color: #F5F0E6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    display: flex; align-items: center; gap: 72px; padding: 0 110px; box-sizing: border-box;
+  }
+  .mark { width: 330px; height: 330px; flex: none; }
+  h1 { margin: 0 0 22px; font-size: 92px; font-weight: 700; letter-spacing: -2px; line-height: 1; }
+  h1 span { color: #F2A33A; }
+  .tagline { margin: 0 0 18px; font: 600 38px/1.25 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .sub { margin: 0; font: 400 25px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #C9C3B6; }
+  .sub b { color: #F2A33A; font-weight: 600; }
+</style>
+</head>
+<body>
+  <img class="mark" src="mark-on-dark.svg" alt="">
+  <div>
+    <h1>cc<span>-</span>chronicle</h1>
+    <p class="tagline">Never lose a Claude Code session.</p>
+    <p class="sub">Archive memory &amp; sessions to <b>any cloud</b>,<br>filed by month, restorable in one command.</p>
+  </div>
+</body>
+</html>
