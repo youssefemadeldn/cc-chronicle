@@ -94,3 +94,13 @@ def test_build_job_includes_rclone_dir_and_config(tmp_path):
     assert j.command[-3:] == ["--config", str(tmp_path / "c.ini"), "backup"]
     import shutil
     assert str(Path(shutil.which("rclone")).parent) in j.path_env.split(":")
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_installed_command_round_trips(tmp_path, platform):
+    s = schedule.Scheduler(runner=FakeRunner(), platform=platform, home=tmp_path)
+    assert s.installed_command() == []
+    j = job(tmp_path)
+    j.command = ["/usr/bin/python3", "/opt/a&b dir/bin/cc-chronicle", "--config", "/c.ini", "backup"]
+    s.install(j)
+    assert s.installed_command() == j.command

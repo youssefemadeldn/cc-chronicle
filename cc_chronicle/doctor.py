@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
 
 from . import ChronicleError, rclone
 from . import config as config_mod
-from . import privacy
+from . import privacy, schedule
 
 MIN_RCLONE = (1, 60)
 OK, INFO, WARN, FAIL = "ok", "info", "warn", "FAIL"
@@ -65,7 +66,21 @@ def checks(config_path=None) -> list:
     add(level, "archive sharing", result.detail + (": " + ", ".join(result.shared_with) if result.shared_with else ""))
 
     add(*_last_backup_check(cfg))
+    add(*_schedule_check())
     return results
+
+
+def _schedule_check() -> tuple:
+    try:
+        command = schedule.Scheduler().installed_command()
+    except ChronicleError as exc:
+        return INFO, "daily backup", str(exc)
+    if not command:
+        return INFO, "daily backup", "not scheduled (optional): cc-chronicle schedule install"
+    missing = [arg for arg in command[:2] if not os.path.exists(arg)]
+    if missing:
+        return FAIL, "daily backup", f"the job points to a missing file ({missing[0]}) — re-run: cc-chronicle schedule install"
+    return OK, "daily backup", f"scheduled: {schedule.Scheduler().status()}"
 
 
 def _cleanup_check(cfg) -> tuple:

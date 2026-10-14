@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -186,6 +187,19 @@ class Scheduler:
         if self.platform == "linux":
             self._run("systemctl", "--user", "daemon-reload", check=False)
         return existed
+
+    def installed_command(self) -> list:
+        """The argv of the installed job, or [] if none is installed."""
+        if not all(f.exists() for f in self.files):
+            return []
+        text = self.files[0].read_text(errors="replace")
+        if self.platform == "darwin":
+            block = re.search(r"<key>ProgramArguments</key>\s*<array>(.*?)</array>", text, re.S)
+            args = re.findall(r"<string>(.*?)</string>", block.group(1)) if block else []
+            unescape = {"&lt;": "<", "&gt;": ">", "&quot;": '"', "&amp;": "&"}
+            return [re.sub(r"&(lt|gt|quot|amp);", lambda m: unescape[m.group(0)], a) for a in args]
+        line = next((ln for ln in text.splitlines() if ln.startswith("ExecStart=")), "")
+        return shlex.split(line[len("ExecStart="):])
 
     def status(self) -> str:
         if not all(f.exists() for f in self.files):
