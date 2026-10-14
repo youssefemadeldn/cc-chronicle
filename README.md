@@ -79,7 +79,7 @@ cc-chronicle restore memory               # every project's memory notes
 cc-chronicle restore history              # this machine's prompt history
 ```
 
-Restored sessions go back to their original project folder, where Claude Code looks for them. Add `--dry-run` to any restore to preview it.
+Restored sessions go back to their original project folder, and `claude --resume` picks them up with their full history. Add `--dry-run` to any restore to preview it.
 
 ## Commands
 
