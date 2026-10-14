@@ -5,7 +5,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import ChronicleError, __version__, doctor, rclone, secrets
+import os
+
+from . import ChronicleError, __version__, doctor, rclone, schedule, secrets
 from . import config as config_mod
 from .backup import backup
 from .restore import Restorer, remote_sessions
@@ -62,6 +64,26 @@ def cmd_scan(args) -> int:
         print(f"  {path}   {kinds}")
     if report.findings:
         print("Values are never shown. What to do: docs/SECURITY.md (rotate the keys; consider an encrypted remote).")
+    return 0
+
+
+def cmd_schedule(args) -> int:
+    scheduler = schedule.Scheduler()
+    if args.action == "install":
+        _load(args)  # fail now, not at 12:00, if the config is missing or broken
+        explicit = args.config or os.environ.get("CC_CHRONICLE_CONFIG")
+        job = schedule.build_job(args.time, Path(explicit).resolve() if explicit else None)
+        if args.dry_run:
+            print("Would run daily at", args.time, ":", " ".join(job.command))
+            print("PATH for the job:", job.path_env)
+            return 0
+        for f in scheduler.install(job):
+            print(f"Installed {f}")
+        print(f"Daily backup at {args.time}; missed runs happen at the next wake or boot. Log: {job.log_file}")
+    elif args.action == "uninstall":
+        print("Removed the daily backup." if scheduler.uninstall() else "No daily backup was installed.")
+    else:
+        print(scheduler.status())
     return 0
 
 
@@ -133,6 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("scan", help="list files that contain likely secrets (values are never shown)")
     p.set_defaults(func=cmd_scan)
+
+    p = sub.add_parser("schedule", help="daily automatic backups (launchd on macOS, systemd on Linux)")
+    p.add_argument("action", choices=["install", "uninstall", "status"])
+    p.add_argument("--time", default="12:00", help="time of day, HH:MM (default 12:00)")
+    p.add_argument("--dry-run", action="store_true", help="install: show the job without installing it")
+    p.set_defaults(func=cmd_schedule)
 
     p = sub.add_parser("doctor", help="check rclone, the config, the remote, sharing and the last backup")
     p.set_defaults(func=cmd_doctor)
