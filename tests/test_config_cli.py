@@ -10,9 +10,9 @@ from cc_chronicle.config import Config, default_claude_dir, default_machine, loa
 
 def test_config_round_trip(tmp_path):
     path = tmp_path / "config.ini"
-    save(Config(remote="gdrive", root=".youssef", machine="mac", claude_dir=Path("/x/.claude")), path)
+    save(Config(remote="gdrive", root="archive", machine="mac", claude_dir=Path("/x/.claude")), path)
     cfg = load(path)
-    assert cfg.dest == "gdrive:.youssef"
+    assert cfg.dest == "gdrive:archive"
     assert cfg.machine == "mac" and cfg.claude_dir == Path("/x/.claude")
     assert cfg.include == ("memory", "sessions", "plans", "history")
 

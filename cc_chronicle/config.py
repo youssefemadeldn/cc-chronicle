@@ -47,7 +47,7 @@ class Config:
 
     @property
     def dest(self) -> str:
-        """The archive root as an rclone path, e.g. ``gdrive:.youssef``."""
+        """The archive root as an rclone path, e.g. ``gdrive:cc-chronicle``."""
         return f"{self.remote}:{self.root}"
 
     def validate(self) -> None:
