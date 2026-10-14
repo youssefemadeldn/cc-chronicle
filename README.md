@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-dark.svg">
-    <img alt="cc-chronicle" src="assets/brand/lockup-light.svg" width="460">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-animated-dark.svg">
+    <img alt="cc-chronicle" src="assets/brand/lockup-animated-light.svg" width="460">
   </picture>
 </p>
 

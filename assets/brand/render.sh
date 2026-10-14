@@ -1,5 +1,6 @@
 #!/bin/sh
-# Regenerate the SVGs and render the PNGs with headless Chrome (macOS path; set CHROME elsewhere).
+# Regenerate the SVGs and render the PNGs with headless Chrome (macOS path; set CHROME elsewhere),
+# then intro.mp4 and intro.gif when ffmpeg is installed.
 #   ./render.sh
 set -eu
 cd "$(dirname "$0")"
@@ -23,3 +24,9 @@ page icon.svg 1024 > .icon-1024.html && shot .icon-1024.html 1024 1024 icon-1024
 page icon.svg 512 > .icon-512.html && shot .icon-512.html 512 512 icon-512.png
 shot social-preview.html 1280 640 social-preview.png
 rm -f .icon-1024.html .icon-512.html
+
+if command -v ffmpeg >/dev/null 2>&1; then
+  CHROME="$CHROME" python3 render_animation.py
+else
+  echo "skipped intro.mp4 and intro.gif: ffmpeg not found"
+fi
