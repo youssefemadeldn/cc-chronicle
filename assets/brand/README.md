@@ -16,7 +16,7 @@ The cc-chronicle mark is a cross-section of a tree trunk: a core and three growt
 
 ## Animation
 
-The animated files play once, in about 2.8 s, then hold: the core pops in, rings 1→3 grow out of the one before (month by month), the amber marker draws clockwise, then the wordmark types in. Viewers who ask for reduced motion see the static mark. The timeline is a set of constants at the top of `make_logo.py`.
+The animated files build in about 2.8 s: the core pops in, rings 1→3 grow out of the one before (month by month), the amber marker draws clockwise, then the wordmark types in. They hold, fade out and replay every 10 s, because GitHub shows the file list above the README and an image can't tell when it scrolls into view: a single play would usually be over before anyone sees it. Viewers who ask for reduced motion see the static mark. The timeline is a set of constants at the top of `make_logo.py`.
 
 Rings are filled bands, so they grow by scaling from their own centre rather than being drawn with a dash offset; only the marker, a stroke, is drawn. `render_animation.py` makes the video: it pauses the animation in headless Chrome, steps it frame by frame, and encodes the frames with ffmpeg.
 

@@ -40,12 +40,13 @@ PAGE = """<!doctype html>
 {svg}</body></html>
 """
 
-# Pause every animation, fit the SVG's view to what it draws once finished (so the lockup is
+# Pause every animation, fit the SVG's view to what it draws once built (so the lockup is
 # centred on what is visible), and expose seek(ms), which resolves after the next frame.
+# The SVG replays every 10 s; the video stops before its fade-out, and platforms loop it.
 SETUP = """(() => {
   const svg = document.querySelector('svg');
   const animations = document.getAnimations();
-  animations.forEach(a => { a.pause(); a.currentTime = 1e6; });
+  animations.forEach(a => { a.pause(); a.currentTime = BUILT_MS; });
   const box = svg.getBBox();
   svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.width} ${box.height}`);
   svg.setAttribute('width', LOCKUP_WIDTH);
@@ -55,7 +56,7 @@ SETUP = """(() => {
     return new Promise(done => requestAnimationFrame(() => done(true)));
   };
   return animations.length;
-})()""".replace("LOCKUP_WIDTH", str(LOCKUP_WIDTH))
+})()""".replace("LOCKUP_WIDTH", str(LOCKUP_WIDTH)).replace("BUILT_MS", str(round((ANIMATION + 0.1) * 1000)))
 
 
 class Chrome:

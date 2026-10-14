@@ -6,9 +6,9 @@ widen toward the upper right like real wood, with one honey-amber arc on the out
 marking a moment in time. Each ring is its own <path> so the mark can be animated ring by
 ring. Small sizes (≤ 32 px) use a simplified mark: two rings, no wobble, bolder strokes.
 
-The *-animated.svg files play once (about 2.8 s) and hold: the core pops in, rings 1→3 grow
-out of the one before, the amber marker draws clockwise, then the wordmark types in. Viewers
-who ask for reduced motion see the static mark.
+The *-animated.svg files build in about 2.8 s: the core pops in, rings 1→3 grow out of the
+one before, the amber marker draws clockwise, then the wordmark types in. They hold, fade out
+and replay every 10 s. Viewers who ask for reduced motion see the static mark.
 """
 from __future__ import annotations
 
@@ -34,7 +34,10 @@ FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monosp
 WORDMARK = "cc-chronicle"
 
 # Animation timeline, in seconds. Ring i starts RING_STAGGER after ring i-1 and grows from the
-# previous ring's radius (the core's, for ring 1) to its own.
+# previous ring's radius (the core's, for ring 1) to its own. The build then holds, fades out
+# over FADE and replays every CYCLE: GitHub shows the file list above the README, and an SVG
+# inside <img> can't tell when it scrolls into view, so a single play is usually missed.
+CYCLE, FADE = 10.0, 0.4
 CORE_POP = 0.3
 RING_START, RING_STAGGER, RING_GROW = 0.3, 0.3, 0.5
 MARKER_START, MARKER_DRAW = 1.4, 0.5
@@ -96,38 +99,67 @@ def mark_shapes(small: bool, ring_color: str, animated: bool = False) -> str:
     length = ' pathLength="1"' if animated else ""
     parts.append(f'<path id="marker" d="{arc}"{length} fill="none" stroke="{AMBER}" stroke-width="{stroke}" '
                  f'stroke-linecap="round"/>')
+    if animated:  # the mark fades out before each replay; the square behind it stays
+        return '<g class="fade">' + "\n  ".join(parts) + "</g>"
     return "\n  ".join(parts)
 
 
-def animation_css(small: bool = False) -> str:
+def pct(t: float) -> str:
+    """A time in seconds as a keyframe position within one CYCLE."""
+    return f"{100 * t / CYCLE:.2f}".rstrip("0").rstrip(".") + "%"
+
+
+def keyframes(name: str, stops) -> str:
+    """@keyframes over one CYCLE, from (times in seconds, declarations) pairs."""
+    body = " ".join(f"{', '.join(dict.fromkeys(pct(t) for t in times))} {{ {css} }}" for times, css in stops)
+    return f"@keyframes {name} {{ {body} }}"
+
+
+def animation_css(small: bool = False, typed: bool = False) -> str:
     """Keyframes for the *-animated.svg files.
 
-    Rings are filled bands, so a dash offset can't draw them: each one scales up from its own
-    centre and fades in. Only the marker, a stroke, is drawn. Everything rests in its final
-    state, so `animation: none` (reduced motion) leaves the static mark.
+    Every animation lasts one CYCLE with no delay and repeats, so the parts stay in step: each
+    one's keyframes hold its starting state until its moment in the build. Rings are filled
+    bands, so a dash offset can't draw them: each one scales up from its own centre and fades
+    in. Only the marker, a stroke, is drawn. Everything rests in its final state, so
+    `animation: none` (reduced motion) leaves the static mark.
     """
     core_r, _, _, rings = geometry(small)
+    loop = f"{CYCLE:g}s"
     rules = [
-        "@keyframes pop { 0% { transform: scale(0); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }",
+        keyframes("pop", [((0,), "transform: scale(0);"),
+                          ((CORE_POP * 0.6,), "transform: scale(1.12);"),
+                          ((CORE_POP, CYCLE), "transform: scale(1);")]),
         f"#core {{ transform-box: view-box; transform-origin: {CORE_X}px {CORE_Y}px; "
-        f"animation: pop {CORE_POP}s ease-out both; }}",
+        f"animation: pop {loop} ease-out infinite; }}",
     ]
     previous = core_r
     for i, (cx, cy, r) in enumerate(rings, 1):
         start = RING_START + RING_STAGGER * (i - 1)
         rules += [
-            f"@keyframes grow-{i} {{ 0% {{ transform: scale({previous / r:.3f}); opacity: 0; }} "
-            f"60% {{ opacity: 1; }} 100% {{ transform: scale(1); opacity: 1; }} }}",
+            keyframes(f"grow-{i}", [((0, start), f"transform: scale({previous / r:.3f}); opacity: 0;"),
+                                    ((start + RING_GROW * 0.6,), "opacity: 1;"),
+                                    ((start + RING_GROW, CYCLE), "transform: scale(1); opacity: 1;")]),
             f"#ring-{i} {{ transform-box: view-box; transform-origin: {cx}px {cy}px; "
-            f"animation: grow-{i} {RING_GROW}s {EASE_OUT} {start:.2f}s both; }}",
+            f"animation: grow-{i} {loop} {EASE_OUT} infinite; }}",
         ]
         previous = r
     rules += [
-        "@keyframes draw { 0% { stroke-dashoffset: 1; opacity: 0; } 1% { opacity: 1; } "
-        "100% { stroke-dashoffset: 0; opacity: 1; } }",
-        f"#marker {{ stroke-dasharray: 1; animation: draw {MARKER_DRAW}s ease-in-out {MARKER_START}s both; }}",
-        "@keyframes type { from { fill-opacity: 0; } to { fill-opacity: 1; } }",
-        ".type { animation: type 0.05s linear both; }",
+        keyframes("draw", [((0, MARKER_START), "stroke-dashoffset: 1; opacity: 0;"),
+                           ((MARKER_START + 0.005,), "opacity: 1;"),
+                           ((MARKER_START + MARKER_DRAW, CYCLE), "stroke-dashoffset: 0; opacity: 1;")]),
+        f"#marker {{ stroke-dasharray: 1; animation: draw {loop} ease-in-out infinite; }}",
+    ]
+    if typed:
+        for k in range(1, len(WORDMARK) + 1):
+            start = TYPE_START + TYPE_STEP * (k - 1)
+            rules += [
+                keyframes(f"type-{k}", [((0, start), "fill-opacity: 0;"), ((start + 0.05, CYCLE), "fill-opacity: 1;")]),
+                f"#char-{k} {{ animation: type-{k} {loop} linear infinite; }}",
+            ]
+    rules += [
+        keyframes("fade", [((0, CYCLE - FADE), "opacity: 1;"), ((CYCLE,), "opacity: 0;")]),
+        f".fade {{ animation: fade {loop} ease-in infinite; }}",
         "@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }",
     ]
     return "\n    ".join(rules)
@@ -157,9 +189,9 @@ def wordmark(animated: bool) -> str:
     if not animated:
         return f'cc<tspan fill="{AMBER}">-</tspan>chronicle'
     spans = []
-    for k, ch in enumerate(WORDMARK):
+    for k, ch in enumerate(WORDMARK, 1):
         fill = f' fill="{AMBER}"' if ch == "-" else ""
-        spans.append(f'<tspan class="type"{fill} style="animation-delay: {TYPE_START + TYPE_STEP * k:.3f}s">{ch}</tspan>')
+        spans.append(f'<tspan id="char-{k}"{fill}>{ch}</tspan>')
     return "".join(spans)  # no whitespace between the tspans: it would render as spaces
 
 
@@ -167,11 +199,12 @@ def lockup(text_color: str, animated: bool = False) -> str:
     """Icon + wordmark, for the README header. Light: navy text. Dark: paper text."""
     height, icon_size, gap = 160, 160, 36
     scale = icon_size / SIZE
+    fade = ' class="fade"' if animated else ""  # the wordmark fades out with the mark before each replay
     body = (f'<g transform="scale({scale:.4f})">'
             f'<rect width="{SIZE}" height="{SIZE}" rx="{CORNER}" fill="{NAVY}"/>{mark_shapes(False, PAPER, animated)}</g>\n  '
-            f'<text x="{icon_size + gap}" y="{height / 2 + 26}" font-family="{FONT}" font-size="76" '
+            f'<text{fade} x="{icon_size + gap}" y="{height / 2 + 26}" font-family="{FONT}" font-size="76" '
             f'font-weight="700" letter-spacing="-1" fill="{text_color}">{wordmark(animated)}</text>')
-    return svg(body, 840, height, "cc-chronicle", animation_css() if animated else "")
+    return svg(body, 840, height, "cc-chronicle", animation_css(typed=True) if animated else "")
 
 
 def main() -> None:
