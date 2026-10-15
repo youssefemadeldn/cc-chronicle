@@ -1,8 +1,8 @@
 # Roadmap
 
-## v0.1.0 (current)
+## v0.1.1 (current)
 
-Everything in the [changelog](../CHANGELOG.md) for 0.1.0.
+Everything in the [changelog](../CHANGELOG.md) for 0.1.0 and 0.1.1.
 
 - **Tested in CI** on Ubuntu and macOS with Python 3.9 and 3.12; all tests run against an rclone `local` remote.
 - **Verified end-to-end on Google Drive:**
@@ -10,6 +10,7 @@ Everything in the [changelog](../CHANGELOG.md) for 0.1.0.
   - a later run on the same archive re-uploading nothing old;
   - a session restored byte-for-byte with its sidecar and file-history;
   - that session reopened by `claude --resume` with its history;
+  - a restored session older than `cleanupPeriodDays` surviving Claude Code's next cleanup (0.1.1);
   - the daily launchd job installed and loaded.
 
 ## Next

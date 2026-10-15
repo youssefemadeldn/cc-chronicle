@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "cc-chronicle: archive Claude Code memory and sessions to any cloud",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "plugins": [
     {
       "name": "cc-chronicle",
       "source": "./",
       "description": "Never lose a Claude Code session: archive memory and sessions to any cloud via rclone, filed by month, with restore, a secret scanner and daily backups.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": { "name": "Youssef Emad Eldin" },
       "keywords": ["claude-code", "backup", "archive", "sessions", "memory", "rclone"],
       "category": "productivity"

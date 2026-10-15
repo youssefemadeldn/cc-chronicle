@@ -1,7 +1,7 @@
 {
   "name": "cc-chronicle",
   "description": "Never lose a Claude Code session: archive memory and sessions to any cloud (Google Drive, Dropbox, OneDrive, S3… via rclone), filed by month, with restore, a secret scanner and daily backups.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Youssef Emad Eldin",
     "url": "https://github.com/youssefemadeldn"
