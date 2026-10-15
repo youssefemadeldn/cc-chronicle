@@ -1,4 +1,6 @@
+import os
 import shutil
+import time
 
 import pytest
 from conftest import OCT, PROJECT, SEP, SITE, needs_rclone, quiet, write
@@ -9,12 +11,24 @@ from cc_chronicle.restore import Restorer, remote_sessions
 
 pytestmark = needs_rclone
 
+OLD = 1767225600  # 2026-01-01, well past Claude Code's default 30-day cleanup
+
 
 @pytest.fixture
 def archived(env):
     cfg, claude, archive = env
     backup(cfg, out=quiet)
     return cfg, claude, archive
+
+
+def age(root):
+    for p in root.rglob("*"):
+        if p.is_file():
+            os.utime(p, (OLD, OLD))
+
+
+def is_fresh(path):
+    return path.stat().st_mtime > time.time() - 60
 
 
 def test_remote_sessions_marks_what_is_local(archived):
@@ -40,15 +54,38 @@ def test_restore_session_brings_back_the_whole_bundle(archived):
     assert (claude / "file-history" / SEP / "abc123@v1").is_file()
 
 
+def test_restored_session_is_dated_now_so_cleanup_keeps_it(archived):
+    # Claude Code's cleanup deletes transcripts and tool results by modification time.
+    cfg, claude, archive = archived
+    proj = claude / "projects" / PROJECT
+    (proj / f"{SEP}.jsonl").unlink()
+    shutil.rmtree(proj / SEP)
+    age(archive)
+    Restorer(cfg, out=quiet).session(SEP)
+    assert is_fresh(proj / f"{SEP}.jsonl")
+    assert is_fresh(proj / SEP / "tool-results" / "r1.txt")
+    assert is_fresh(proj / SEP / "subagents" / "agent-1.jsonl")
+
+
+def test_restored_plans_are_dated_now(archived):
+    cfg, claude, archive = archived
+    (claude / "plans" / "plan-a.md").unlink()
+    age(archive)
+    Restorer(cfg, out=quiet).plans()
+    assert is_fresh(claude / "plans" / "plan-a.md")
+
+
 def test_restore_never_overwrites_local_files(archived):
     cfg, claude, _archive = archived
     note = write(claude / "projects" / PROJECT / "memory" / "note.md", "edited locally, not yet backed up\n")
     live = write(claude / "projects" / PROJECT / f"{OCT}.jsonl", "newer local content\n")
+    os.utime(live, (OLD, OLD))
     restorer = Restorer(cfg, out=quiet)
     restorer.memory()
     restorer.session(OCT)
     assert note.read_text() == "edited locally, not yet backed up\n"
     assert live.read_text() == "newer local content\n"
+    assert live.stat().st_mtime == OLD
 
 
 def test_restore_memory_into_a_fresh_machine(archived):

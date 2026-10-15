@@ -84,7 +84,7 @@ cc-chronicle restore memory               # every project's memory notes
 cc-chronicle restore history              # this machine's prompt history
 ```
 
-Restored sessions go back to their original project folder, and `claude --resume` picks them up with their full history. Add `--dry-run` to any restore to preview it.
+Restored sessions go back to their original project folder, and `claude --resume` picks them up with their full history. They are dated to the moment of restore, so Claude Code's cleanup, which deletes by file date, gives them a fresh `cleanupPeriodDays` instead of deleting them again. Add `--dry-run` to any restore to preview it.
 
 ## Commands
 

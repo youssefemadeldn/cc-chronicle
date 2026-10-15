@@ -34,6 +34,7 @@ Why cc-chronicle works the way it does. Change a rule here first, then in the co
 - Always `--ignore-existing`: the local copy of a live session is newer than its archived copy, and must never be rolled back.
 - Targeted (one session, project or month) by design. Pulling every old session back would just be deleted again by Claude Code's cleanup.
 - Sessions return to their original project folder name.
+- Files a restore creates (transcript, subagents, tool results, plans) get today's date. Claude Code's cleanup deletes transcripts, tool results and plans whose modification time is older than `cleanupPeriodDays`, and rclone keeps the archived date, so an old session restored as-is was deleted again at the next sweep (verified against Claude Code 2.1.299). Memory keeps its dates; the sweep doesn't touch it.
 
 ## Safety
 

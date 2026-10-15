@@ -3,10 +3,16 @@
 Restore never overwrites a local file (--ignore-existing): the local copy of a live
 session is always newer than its archived copy. Sessions return to their original
 project folder.
+
+Restored session files and plans are dated to the moment of restore. Claude Code's
+cleanup deletes them by modification time, so with their archived dates anything
+older than cleanupPeriodDays would be deleted again at its next sweep.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import ChronicleError, rclone
 from .backup import log_path, run_id
@@ -42,6 +48,12 @@ def remote_sessions(cfg: Config) -> list:
     return sorted(sessions, key=lambda s: (s.month, s.project, s.session_id))
 
 
+def _files(path: Path) -> set:
+    if path.is_file():
+        return {path}
+    return {p for p in path.rglob("*") if p.is_file()} if path.is_dir() else set()
+
+
 class Restorer:
     def __init__(self, cfg: Config, *, dry_run: bool = False, out=print):
         self.cfg = cfg
@@ -53,6 +65,15 @@ class Restorer:
         n = rclone.transfer(*args, "--ignore-existing", log_file=self.log_file, dry_run=self.dry_run,
                             allow_missing=allow_missing)
         self.out(f"  {name:<14} {n} file action(s)")
+        return n
+
+    def _copy_fresh(self, name: str, local: Path, *args: str, allow_missing: bool = False) -> int:
+        """_copy, then date the files it created to now. Files that were already local keep their date."""
+        before = _files(local)
+        n = self._copy(name, *args, allow_missing=allow_missing)
+        if not self.dry_run:
+            for path in _files(local) - before:
+                os.utime(path)
         return n
 
     def memory(self, project: str | None = None) -> int:
@@ -69,10 +90,11 @@ class Restorer:
         s = matches[0]
         base = f"{self.cfg.dest}/.claude/sessions/{s.month}/{s.project}"
         local_project = self.cfg.claude_dir / "projects" / s.project
+        transcript, sidecar = local_project / f"{s.session_id}.jsonl", local_project / s.session_id
         self.out(f"== session {s.session_id} ({s.month}, {s.project})")
-        self._copy("transcript", "copyto", f"{base}/{s.session_id}.jsonl", str(local_project / f"{s.session_id}.jsonl"))
-        self._copy("sidecar", "copy", f"{base}/{s.session_id}", str(local_project / s.session_id),
-                   "--filter", "- /file-history/**", allow_missing=True)
+        self._copy_fresh("transcript", transcript, "copyto", f"{base}/{s.session_id}.jsonl", str(transcript))
+        self._copy_fresh("sidecar", sidecar, "copy", f"{base}/{s.session_id}", str(sidecar),
+                         "--filter", "- /file-history/**", allow_missing=True)
         self._copy("file-history", "copy", f"{base}/{s.session_id}/file-history",
                    str(self.cfg.claude_dir / "file-history" / s.session_id), allow_missing=True)
         return s
@@ -91,5 +113,6 @@ class Restorer:
                           str(self.cfg.claude_dir / "history.jsonl"), allow_missing=True)
 
     def plans(self) -> int:
-        return self._copy("plans", "copy", f"{self.cfg.dest}/.claude/plans", str(self.cfg.claude_dir / "plans"),
-                          allow_missing=True)
+        plans = self.cfg.claude_dir / "plans"
+        return self._copy_fresh("plans", plans, "copy", f"{self.cfg.dest}/.claude/plans", str(plans),
+                                allow_missing=True)
