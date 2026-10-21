@@ -1,23 +1,27 @@
+import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from conftest import needs_rclone
 
-from cc_chronicle import ChronicleError, schedule
+from cc_chronicle import ChronicleError, doctor, rclone, schedule
 
 
 class FakeRunner:
     """Records launchctl/systemctl calls instead of running them."""
 
-    def __init__(self, fail_on=()):
+    def __init__(self, fail_on=(), stdout="last exit code = 0\n"):
         self.calls = []
         self.fail_on = fail_on
+        self.stdout = stdout
 
     def __call__(self, argv, **_kwargs):
         self.calls.append(argv)
         code = 1 if any(word in argv for word in self.fail_on) else 0
-        return subprocess.CompletedProcess(argv, code, stdout="last exit code = 0\n", stderr="")
+        return subprocess.CompletedProcess(argv, code, stdout=self.stdout, stderr="")
 
 
 def job(tmp_path):
@@ -104,3 +108,48 @@ def test_installed_command_round_trips(tmp_path, platform):
     j.command = ["/usr/bin/python3", "/opt/a&b dir/bin/cc-chronicle", "--config", "/c.ini", "backup"]
     s.install(j)
     assert s.installed_command() == j.command
+
+
+@pytest.mark.parametrize("platform, stdout, code", [
+    ("darwin", "\truns = 7\n\tlast exit code = 1\n", 1),
+    ("darwin", "\tlast exit code = 0\n", 0),
+    ("darwin", "\tlast exit code = (never exited)\n", None),
+    ("linux", "ExecMainStatus=2\nExecMainExitTimestamp=Tue 2026-10-20 12:00:05 EET\n", 2),
+    ("linux", "ExecMainStatus=0\nExecMainExitTimestamp=\n", None),
+])
+def test_last_exit_code(tmp_path, platform, stdout, code):
+    s = schedule.Scheduler(runner=FakeRunner(stdout=stdout), platform=platform, home=tmp_path)
+    assert s.last_exit_code() is None  # not installed
+    s.install(job(tmp_path))
+    assert s.last_exit_code() == code
+
+
+class FakeScheduler:
+    code = 0
+
+    def installed_command(self):
+        return ["/bin/sh", "/bin/sh", "backup"]  # paths that exist
+
+    def status(self):
+        return f"installed, loaded: daily at 12:00 (last exit code = {self.code})"
+
+    def last_exit_code(self):
+        return self.code
+
+
+@pytest.mark.parametrize("code, level", [(0, doctor.OK), (1, doctor.WARN)])
+def test_doctor_warns_when_the_last_scheduled_run_failed(monkeypatch, code, level):
+    monkeypatch.setattr(FakeScheduler, "code", code)
+    monkeypatch.setattr(schedule, "Scheduler", FakeScheduler)
+    got, _name, detail = doctor._schedule_check()
+    assert got == level
+    assert ("FAILED" in detail) == (code != 0)
+
+
+@pytest.mark.parametrize("hours, scheduled, level", [
+    (2, True, doctor.OK), (30, True, doctor.WARN), (30, False, doctor.OK)])
+def test_doctor_warns_when_the_daily_job_left_a_stale_stamp(monkeypatch, hours, scheduled, level):
+    when = datetime.now(timezone.utc) - timedelta(hours=hours)
+    monkeypatch.setattr(rclone, "cat", lambda _path: json.dumps({"finished_at": when.isoformat()}))
+    cfg = SimpleNamespace(dest="t:archive", machine="mac")
+    assert doctor._last_backup_check(cfg, scheduled=scheduled)[0] == level

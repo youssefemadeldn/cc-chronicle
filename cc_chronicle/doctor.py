@@ -5,7 +5,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import ChronicleError, rclone
 from . import config as config_mod
@@ -65,8 +65,9 @@ def checks(config_path=None) -> list:
     level = {"private": OK, "shared": FAIL, "skipped": WARN if kind == "drive" else INFO}[result.status]
     add(level, "archive sharing", result.detail + (": " + ", ".join(result.shared_with) if result.shared_with else ""))
 
-    add(*_last_backup_check(cfg))
-    add(*_schedule_check())
+    daily = _schedule_check()
+    add(*_last_backup_check(cfg, scheduled=daily[0] in (OK, WARN)))
+    add(*daily)
     return results
 
 
@@ -80,7 +81,12 @@ def _schedule_check() -> tuple:
     missing = [arg for arg in command[:2] if not os.path.exists(arg)]
     if missing:
         return FAIL, "daily backup", f"the job points to a missing file ({missing[0]}) — re-run: cc-chronicle schedule install"
-    return OK, "daily backup", f"scheduled: {schedule.Scheduler().status()}"
+    scheduler = schedule.Scheduler()
+    detail = f"scheduled: {scheduler.status()}"
+    code = scheduler.last_exit_code()
+    if code:
+        return WARN, "daily backup", f"{detail} — the last run FAILED; see {config_mod.state_dir() / 'logs' / 'scheduled.log'}"
+    return OK, "daily backup", detail
 
 
 def _cleanup_check(cfg) -> tuple:
@@ -94,7 +100,7 @@ def _cleanup_check(cfg) -> tuple:
     return OK, "local cleanup", f"cleanupPeriodDays = {days} (reports exist of it being ignored; the archive is your copy)"
 
 
-def _last_backup_check(cfg) -> tuple:
+def _last_backup_check(cfg, scheduled: bool = False) -> tuple:
     raw = rclone.cat(f"{cfg.dest}/last-backup.{cfg.machine}.json")
     if not raw:
         return WARN, "last backup", "none yet — run: cc-chronicle backup"
@@ -109,6 +115,8 @@ def _last_backup_check(cfg) -> tuple:
     failed = data.get("failed_steps") or []
     if failed:
         return WARN, "last backup", f"{detail}, but these steps failed: {', '.join(failed)} (see the run's log)"
+    if scheduled and age > timedelta(hours=26):
+        return WARN, "last backup", f"{detail}, but the daily job should have made a newer one (see the run's log)"
     return (OK if days < 7 else WARN), "last backup", detail
 
 

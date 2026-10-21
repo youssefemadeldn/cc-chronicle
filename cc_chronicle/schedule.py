@@ -201,6 +201,22 @@ class Scheduler:
         line = next((ln for ln in text.splitlines() if ln.startswith("ExecStart=")), "")
         return shlex.split(line[len("ExecStart="):])
 
+    def last_exit_code(self):
+        """The exit code of the job's last run, or None if it is not installed or has not run yet."""
+        if not all(f.exists() for f in self.files):
+            return None
+        if self.platform == "darwin":
+            out = self._run("launchctl", "print", f"gui/{os.getuid()}/{LABEL}", check=False).stdout
+            m = re.search(r"last exit code = (-?\d+)", out)  # "(never exited)" before the first run
+            return int(m.group(1)) if m else None
+        out = self._run("systemctl", "--user", "show", f"{UNIT}.service", "-p", "ExecMainStatus,ExecMainExitTimestamp",
+                        check=False).stdout
+        props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+        if not props.get("ExecMainExitTimestamp"):  # empty until the first run has ended
+            return None
+        status = props.get("ExecMainStatus", "")
+        return int(status) if status.lstrip("-").isdigit() else None
+
     def status(self) -> str:
         if not all(f.exists() for f in self.files):
             return "not installed — run: cc-chronicle schedule install"
