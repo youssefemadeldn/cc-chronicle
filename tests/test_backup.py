@@ -1,7 +1,10 @@
 import json
 
+import pytest
+
 from conftest import OCT, ORPHAN, PROJECT, SEP, needs_rclone, quiet, write
 
+from cc_chronicle import ChronicleError, doctor, rclone
 from cc_chronicle.backup import backup
 
 pytestmark = needs_rclone
@@ -86,3 +89,27 @@ def test_sessions_stay_archived_after_local_cleanup(env):
     (claude / "projects" / PROJECT / f"{SEP}.jsonl").unlink()
     backup(cfg, out=quiet)
     assert (archive / ".claude" / "sessions" / "2026-09" / PROJECT / f"{SEP}.jsonl").is_file()
+
+
+def test_a_failed_step_does_not_stop_the_rest(env, monkeypatch):
+    cfg, _claude, archive = env
+    real = rclone.transfer
+
+    def flaky(command, src, dst, *extra, **kwargs):
+        if dst.endswith("/.claude/sessions"):
+            raise rclone.RcloneError("rclone copy failed: corrupted on transfer: md5 hashes differ")
+        return real(command, src, dst, *extra, **kwargs)
+
+    monkeypatch.setattr(rclone, "transfer", flaky)
+    with pytest.raises(ChronicleError, match="sessions"):
+        backup(cfg, out=quiet)
+    c = archive / ".claude"
+    assert not (c / "sessions").exists()
+    assert (c / "file-history" / ORPHAN / "def456@v1").is_file()
+    assert (c / "plans" / "plan-a.md").is_file()
+    assert (c / "history.mac.jsonl").is_file()
+    assert (archive / "README.md").is_file()
+    stamp = json.loads((archive / "last-backup.mac.json").read_text())
+    assert stamp["failed_steps"] == ["sessions"]
+    level, _name, detail = doctor._last_backup_check(cfg)
+    assert level == doctor.WARN and "sessions" in detail

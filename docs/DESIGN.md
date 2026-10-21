@@ -23,6 +23,8 @@ Why cc-chronicle works the way it does. Change a rule here first, then in the co
 - **Filed by start month**: the first `timestamp` in the transcript, in local time (file time as a fallback). A session never moves between months, even when resumed later, so its archive path never changes.
 - **Bundled**: `<id>.jsonl` plus `<id>/subagents/`, `<id>/tool-results/` and `<id>/file-history/` sit together. Restoring one session restores everything it needs, including rewind snapshots. `file-history` snapshots whose session file is gone are archived under `.claude/file-history/<id>/`.
 - **Staging**: `stage.py` builds the month layout as a temporary tree of symlinks, uploaded in one `rclone copy --copy-links`. One rclone call keeps it fast and incremental.
+- **Live files are snapshotted**: a file changed in the last 24 hours is copied into the stage instead of linked. An open session keeps appending to its transcript, and rclone rejects a file that changes while it uploads (`md5 hashes differ` / `source file is being updated`). The copy is fixed; the next run picks up what was added after it. Older files stay links, so the copy stays small.
+- **One failed step doesn't stop the run**: each upload step (memory, sessions, file-history, plans, history, readme) runs even if an earlier one failed. The stamp is still written and lists `failed_steps`; `doctor` warns about them and the command exits non-zero, so the scheduled job still shows as failed.
 
 ## Per-machine files
 

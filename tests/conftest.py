@@ -1,7 +1,9 @@
 """Shared fixtures: a fake ~/.claude and an rclone 'local' remote, so no test touches the cloud."""
 import json
+import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -33,6 +35,14 @@ def session_lines(ts: str, title: str) -> str:
         {"type": "ai-title", "title": title},
     ]
     return "".join(json.dumps(e) + "\n" for e in events)
+
+
+def age(root: Path, days: int = 30) -> None:
+    """Date every file under root `days` ago, as if no session had touched it lately."""
+    when = time.time() - days * 86400
+    for p in root.rglob("*"):
+        if p.is_file():
+            os.utime(p, (when, when))
 
 
 def make_claude(root: Path) -> Path:

@@ -7,14 +7,22 @@
 
 The month is the session's START date (first timestamp, local time), so a session never
 moves between months. rclone uploads the tree with --copy-links.
+
+Files changed in the last LIVE_SECONDS are copied in instead of linked: an open session keeps
+appending to its transcript, and rclone fails a file that changes while it uploads. The copy
+is a fixed snapshot; the next run uploads whatever was added after it.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+LIVE_SECONDS = 24 * 3600
 
 
 @dataclass
@@ -23,6 +31,7 @@ class StageSummary:
     bytes: int = 0
     months: dict = field(default_factory=dict)
     orphan_file_history: int = 0
+    snapshots: int = 0
 
 
 def start_month(path: Path) -> str:
@@ -44,16 +53,38 @@ def start_month(path: Path) -> str:
     return datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime)).strftime("%Y-%m")
 
 
-def _link(src: Path, dst: Path) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(src, dst)
+def _changed_since(path: Path, cutoff: float) -> bool:
+    files = [path] if path.is_file() else (p for p in path.rglob("*") if p.is_file())
+    for f in files:
+        try:
+            if f.stat().st_mtime >= cutoff:
+                return True
+        except FileNotFoundError:  # removed while we look
+            continue
+    return False
 
 
-def stage(claude_dir: Path, out_dir: Path) -> StageSummary:
+def stage(claude_dir: Path, out_dir: Path, *, live_seconds: float = LIVE_SECONDS) -> StageSummary:
     projects = claude_dir / "projects"
     file_history = claude_dir / "file-history"
     summary = StageSummary()
     seen = set()
+    cutoff = time.time() - live_seconds
+
+    def _link(src: Path, dst: Path) -> None:
+        """Link src at dst; a file changed since the cutoff is copied, and a folder holding one is
+        rebuilt so that only its changed files are copied."""
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if not _changed_since(src, cutoff):
+            os.symlink(src, dst)
+        elif src.is_dir():
+            dst.mkdir(exist_ok=True)
+            for child in src.iterdir():
+                if child.name != ".DS_Store":
+                    _link(child, dst / child.name)
+        else:
+            shutil.copy2(src, dst)
+            summary.snapshots += 1
 
     for pdir in sorted(projects.iterdir()) if projects.is_dir() else []:
         if not pdir.is_dir():

@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- A session that was open during the backup failed to upload (`corrupted on transfer: md5 hashes differ`) and stopped the whole run, so plans, history and the last-backup stamp were skipped too. Files changed in the last 24 hours are now copied into the stage as a fixed snapshot. A step that still fails no longer stops the others: the stamp records `failed_steps`, `doctor` warns about them, and the command exits with an error.
+
 ## [0.1.1] - 2026-10-15
 
 ### Added

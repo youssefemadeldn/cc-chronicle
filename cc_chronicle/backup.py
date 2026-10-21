@@ -31,6 +31,7 @@ class BackupResult:
     staged: stage.StageSummary = field(default_factory=stage.StageSummary)
     secrets: secrets.ScanReport = field(default_factory=secrets.ScanReport)
     privacy: privacy.PrivacyResult | None = None
+    failed: dict = field(default_factory=dict)
 
 
 def run_id() -> str:
@@ -64,7 +65,13 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
         out(f"  {'':<14} a real backup would stop here: {message}")
 
     def step(name: str, *args: str, **kwargs) -> None:
-        n = rclone.transfer(*args, log_file=result.log_file, dry_run=dry_run, progress=progress, **kwargs)
+        # One failed step (say, a file that kept changing) must not cost the others their upload.
+        try:
+            n = rclone.transfer(*args, log_file=result.log_file, dry_run=dry_run, progress=progress, **kwargs)
+        except rclone.RcloneError as exc:
+            result.failed[name] = str(exc)
+            out(f"  {name:<14} FAILED: {exc}")
+            return
         result.actions[name] = n
         out(f"  {name:<14} {n} file action(s)")
 
@@ -87,7 +94,8 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
             result.staged = stage.stage(claude, tmp / "stage")
             s = result.staged
             months = ", ".join(f"{m}: {n}" for m, n in s.months.items()) or "none"
-            out(f"  {'staged':<14} {s.sessions} session(s) ({months}), {s.bytes / 2**20:.1f} MiB")
+            out(f"  {'staged':<14} {s.sessions} session(s) ({months}), {s.bytes / 2**20:.1f} MiB"
+                + (f", {s.snapshots} recent file(s) copied" if s.snapshots else ""))
             if (tmp / "stage" / "sessions").is_dir():
                 step("sessions", "copy", str(tmp / "stage" / "sessions"), f"{cfg.dest}/.claude/sessions", "--copy-links")
             if (tmp / "stage" / "file-history").is_dir():
@@ -110,6 +118,9 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
             out(f"  {'':<14} it holds private conversations; remove that sharing in the storage provider")
         elif result.privacy.status == "private":
             out(f"  {'sharing':<14} private (only the owner has access)")
+    if result.failed:
+        raise ChronicleError(f"{len(result.failed)} step(s) failed ({', '.join(result.failed)}); "
+                             f"the rest were uploaded. log: {result.log_file}")
     out(f"== done. log: {result.log_file}")
     return result
 
@@ -125,4 +136,5 @@ def stamp(cfg: Config, result: BackupResult) -> str:
         "sessions": result.staged.sessions,
         "sessions_by_month": result.staged.months,
         "session_bytes": result.staged.bytes,
+        "failed_steps": sorted(result.failed),
     }, indent=2) + "\n"

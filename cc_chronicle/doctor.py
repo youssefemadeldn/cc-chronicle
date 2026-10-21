@@ -99,12 +99,17 @@ def _last_backup_check(cfg) -> tuple:
     if not raw:
         return WARN, "last backup", "none yet — run: cc-chronicle backup"
     try:
-        when = datetime.fromisoformat(json.loads(raw)["finished_at"])
+        data = json.loads(raw)
+        when = datetime.fromisoformat(data["finished_at"])
     except (ValueError, KeyError):
         return WARN, "last backup", "stamp unreadable"
     age = datetime.now(timezone.utc) - when
     days = age.days
-    return (OK if days < 7 else WARN), "last backup", f"{when:%Y-%m-%d %H:%M} ({days} day(s) ago)"
+    detail = f"{when:%Y-%m-%d %H:%M} ({days} day(s) ago)"
+    failed = data.get("failed_steps") or []
+    if failed:
+        return WARN, "last backup", f"{detail}, but these steps failed: {', '.join(failed)} (see the run's log)"
+    return (OK if days < 7 else WARN), "last backup", detail
 
 
 def run(config_path=None, out=print) -> int:
