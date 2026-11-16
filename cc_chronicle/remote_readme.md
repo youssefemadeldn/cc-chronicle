@@ -17,6 +17,10 @@ last-backup.<machine>.json        when each machine last backed up, with counts
 ├── file-history/<session-id>/    rewind snapshots whose session file is gone
 ├── plans/                        plan-mode plans (ARCHIVE)
 └── history.<machine>.jsonl       every prompt typed on that machine (ARCHIVE)
+.cursor/
+├── chats/<YYYY-MM>/<workspace>/<chat-uuid>/
+                                  Cursor chats by start month (ARCHIVE: never deleted)
+└── projects/                     Cursor project files, same tree as on the machine (ARCHIVE)
 _deleted/<run>/.claude/projects/<project>/memory/
                                   memory notes removed or changed at that backup run
 ```
@@ -30,3 +34,4 @@ _deleted/<run>/.claude/projects/<project>/memory/
   a line with `"type":"ai-title"` holds the session's title.
 - Current truth is in `projects/*/memory/`. Anything under `_deleted/` is no longer valid.
 - To bring something back: `cc-chronicle restore list`, then `cc-chronicle restore session <id>`.
+  One Cursor chat: `cc-chronicle restore cursor <chat-uuid>`.

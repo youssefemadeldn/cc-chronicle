@@ -12,6 +12,7 @@ from . import ChronicleError
 
 INCLUDE_ALL = ("memory", "sessions", "plans", "history")
 SECRETS_MODES = ("warn", "abort")
+CURSOR_MODES = ("on", "off")
 DEFAULT_ROOT = "cc-chronicle"
 
 
@@ -31,6 +32,11 @@ def default_claude_dir() -> Path:
     return Path(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"))
 
 
+def default_cursor_dir() -> Path:
+    # CC_CHRONICLE_CURSOR_DIR lets tests aim at a temporary folder instead of the real ~/.cursor.
+    return Path(os.path.expanduser(os.environ.get("CC_CHRONICLE_CURSOR_DIR") or "~/.cursor"))
+
+
 def default_machine() -> str:
     name = socket.gethostname().split(".")[0].lower()
     return re.sub(r"[^a-z0-9-]+", "-", name).strip("-") or "machine"
@@ -44,6 +50,8 @@ class Config:
     claude_dir: Path = field(default_factory=default_claude_dir)
     include: tuple = INCLUDE_ALL
     secrets_on_found: str = "warn"
+    cursor: str = "on"
+    cursor_dir: Path = field(default_factory=default_cursor_dir)
 
     @property
     def dest(self) -> str:
@@ -60,6 +68,8 @@ class Config:
             raise ChronicleError(f"config: unknown include item(s): {', '.join(sorted(unknown))}")
         if self.secrets_on_found not in SECRETS_MODES:
             raise ChronicleError(f"config: secrets_on_found must be one of {', '.join(SECRETS_MODES)}")
+        if self.cursor not in CURSOR_MODES:
+            raise ChronicleError(f"config: cursor must be one of {', '.join(CURSOR_MODES)}")
 
 
 def load(path: Path | None = None) -> Config:
@@ -79,6 +89,8 @@ def load(path: Path | None = None) -> Config:
         claude_dir=Path(os.path.expanduser(section.get("claude_dir", str(default_claude_dir())).strip())),
         include=tuple(item.strip() for item in include.split(",") if item.strip()),
         secrets_on_found=section.get("secrets_on_found", "warn").strip(),
+        cursor=section.get("cursor", "on").strip(),
+        cursor_dir=Path(os.path.expanduser(section.get("cursor_dir", str(default_cursor_dir())).strip())),
     )
     cfg.validate()
     return cfg
@@ -96,6 +108,8 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "claude_dir": str(cfg.claude_dir),
         "include": ",".join(cfg.include),
         "secrets_on_found": cfg.secrets_on_found,
+        "cursor": cfg.cursor,
+        "cursor_dir": str(cfg.cursor_dir),
     }
     with open(path, "w") as fh:
         fh.write("# cc-chronicle config. No secrets here: credentials stay in rclone.conf.\n")

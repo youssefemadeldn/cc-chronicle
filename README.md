@@ -69,6 +69,9 @@ cc-chronicle schedule install     # optional: back up daily at 12:00
 │   │   └── <session-id>/             subagents/  tool-results/  file-history/
 │   ├── plans/                        ARCHIVE
 │   └── history.<machine>.jsonl       your prompt history, one file per machine
+├── .cursor/
+│   ├── chats/<YYYY-MM>/<workspace>/<chat-uuid>/   Cursor chats by start month: ARCHIVE
+│   └── projects/                     Cursor project files, same tree: ARCHIVE
 └── _deleted/<run>/…                  memory notes removed or changed at that run
 ```
 
@@ -82,6 +85,7 @@ cc-chronicle restore session 5e22d49a     # one session (id prefix), with its su
 cc-chronicle restore project my-app 2026-09
 cc-chronicle restore memory               # every project's memory notes
 cc-chronicle restore history              # this machine's prompt history
+cc-chronicle restore cursor <chat-uuid>   # one Cursor chat, back into its original folder
 ```
 
 Restored sessions go back to their original project folder, and `claude --resume` picks them up with their full history. They are dated to the moment of restore, so Claude Code's cleanup, which deletes by file date, gives them a fresh `cleanupPeriodDays` instead of deleting them again. Add `--dry-run` to any restore to preview it.
@@ -93,7 +97,7 @@ Restored sessions go back to their original project folder, and `claude --resume
 | `init` | Create the config: rclone remote, folder, machine name |
 | `backup [--dry-run] [--strict-secrets]` | Scan for secrets, then upload what changed |
 | `status` | Last backup, and what a backup would upload now |
-| `restore <list\|session\|project\|memory\|history\|plans>` | Bring data back; never overwrites |
+| `restore <list\|session\|project\|memory\|history\|plans\|cursor>` | Bring data back; never overwrites |
 | `scan` | List files containing likely secrets (values never shown) |
 | `schedule <install\|uninstall\|status> [--time HH:MM]` | Daily automatic backups |
 | `doctor` | Check Python, rclone, config, remote, sharing, last backup and schedule |
@@ -112,6 +116,9 @@ claude_dir = /Users/me/.claude
 include = memory,sessions,plans,history
 # "abort": upload nothing when new or changed files contain likely secrets
 secrets_on_found = warn
+# Cursor chats and projects, archived when ~/.cursor exists. "off" skips them.
+cursor = on
+cursor_dir = /Users/me/.cursor
 ```
 
 No credentials are stored here: rclone keeps those in its own config.

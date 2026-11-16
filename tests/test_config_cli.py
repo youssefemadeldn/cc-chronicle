@@ -31,6 +31,17 @@ def test_invalid_config_is_rejected(tmp_path):
         Config(remote="g", machine="My Mac").validate()
     with pytest.raises(ChronicleError, match="include"):
         Config(remote="g", include=("memory", "photos")).validate()
+    with pytest.raises(ChronicleError, match="cursor"):
+        Config(remote="g", cursor="maybe").validate()
+
+
+def test_old_config_backs_up_cursor_when_the_directory_exists(tmp_path, monkeypatch):
+    monkeypatch.delenv("CC_CHRONICLE_CURSOR_DIR", raising=False)
+    path = tmp_path / "config.ini"
+    path.write_text("[cc-chronicle]\nremote = t\nroot = archive\nmachine = box\n")
+    cfg = load(path)
+    assert cfg.cursor == "on"
+    assert cfg.cursor_dir == Path.home() / ".cursor"
 
 
 def test_defaults(monkeypatch):

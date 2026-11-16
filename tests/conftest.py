@@ -70,9 +70,11 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("RCLONE_CONFIG", str(rclone_conf))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("CC_CHRONICLE_CONFIG", str(tmp_path / "config.ini"))
+    monkeypatch.setenv("CC_CHRONICLE_CURSOR_DIR", str(tmp_path / "cursor"))
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     archive = tmp_path / "remote" / "archive"
-    cfg = Config(remote="t", root=str(archive), machine="mac", claude_dir=make_claude(tmp_path))
+    cfg = Config(remote="t", root=str(archive), machine="mac", claude_dir=make_claude(tmp_path),
+                 cursor_dir=tmp_path / "cursor")
     return cfg, cfg.claude_dir, archive
 
 

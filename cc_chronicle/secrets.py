@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,6 +45,70 @@ def scan_text(text: str) -> dict:
     return counts
 
 
+def _merge(into: dict, found: dict) -> None:
+    for name, n in found.items():
+        into[name] = into.get(name, 0) + n
+
+
+def _sqlite_counts(path: Path) -> dict | None:
+    """Scan text stored inside a SQLite file. None if the file cannot be opened."""
+    uri = path.resolve().as_uri() + "?mode=ro"
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error:
+        return None
+    counts = {}
+    try:
+        tables = [row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+        for table in tables:
+            quoted = '"' + table.replace('"', '""') + '"'
+            try:
+                cursor = conn.execute(f"SELECT * FROM {quoted}")
+            except sqlite3.Error:
+                continue
+            for row in cursor:
+                for cell in row:
+                    if isinstance(cell, str):
+                        _merge(counts, scan_text(cell))
+                    elif isinstance(cell, bytes):
+                        _merge(counts, scan_text(cell.decode("utf-8", "ignore")))
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    return counts
+
+
+def scan_file(path: Path) -> dict:
+    """Scan one file. A SQLite database is scanned from the text it stores, not as raw bytes."""
+    if path.name == "store.db" or path.suffix == ".db":
+        counts = _sqlite_counts(path)
+        if counts is not None:
+            return counts
+        return scan_text(path.read_bytes().decode("utf-8", "ignore"))
+    return scan_text(path.read_text(errors="ignore"))
+
+
+def _cursor_on(cfg: Config) -> bool:
+    return cfg.cursor == "on" and cfg.cursor_dir.is_dir()
+
+
+def _skip_cursor(path: Path) -> bool:
+    return path.name == ".DS_Store" or path.name.endswith(("-wal", "-shm"))
+
+
+def finding_path(cfg: Config, path: Path) -> str:
+    try:
+        return str(path.relative_to(cfg.claude_dir))
+    except ValueError:
+        pass
+    try:
+        return ".cursor/" + str(path.relative_to(cfg.cursor_dir))
+    except ValueError:
+        return str(path)
+
+
 @dataclass
 class ScanReport:
     files: int = 0
@@ -78,6 +143,11 @@ def files_to_scan(cfg: Config) -> list:
         found += [p for p in (claude / "plans").rglob("*") if p.is_file()]
     if "history" in cfg.include and (claude / "history.jsonl").is_file():
         found.append(claude / "history.jsonl")
+    if _cursor_on(cfg):
+        for folder in ("chats", "projects"):
+            base = cfg.cursor_dir / folder
+            if base.is_dir():
+                found += [p for p in base.rglob("*") if p.is_file() and not _skip_cursor(p)]
     return sorted(p for p in found if p.name != ".DS_Store")
 
 
@@ -101,14 +171,14 @@ def scan(cfg: Config) -> ScanReport:
         if cached and cached[0] == stamp:
             counts = cached[1]
         else:
-            counts = scan_text(path.read_text(errors="ignore"))
+            counts = scan_file(path)
             report.rescanned += 1
             if counts:
-                report.new_findings[str(path.relative_to(cfg.claude_dir))] = counts
+                report.new_findings[finding_path(cfg, path)] = counts
         fresh[key] = [stamp, counts]
         report.files += 1
         if counts:
-            report.findings[str(path.relative_to(cfg.claude_dir))] = counts
+            report.findings[finding_path(cfg, path)] = counts
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps({"version": _CACHE_VERSION, "files": fresh}))

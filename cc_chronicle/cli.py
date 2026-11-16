@@ -123,6 +123,8 @@ def cmd_restore(args) -> int:
         restorer.history()
     elif args.what == "plans":
         restorer.plans()
+    elif args.what == "cursor":
+        restorer.cursor_chat(args.id_prefix)
     print(f"== done. log: {restorer.log_file}")
     return 0
 
@@ -134,7 +136,7 @@ def _load(args) -> config_mod.Config:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cc-chronicle",
-        description="Archive Claude Code memory and sessions to any rclone remote, and restore them.")
+        description="Archive Claude Code and Cursor history to any rclone remote, and restore it.")
     parser.add_argument("--config", help="config file (default: ~/.config/cc-chronicle/config.ini)")
     parser.add_argument("--version", action="version", version=f"cc-chronicle {__version__}")
     sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
@@ -182,6 +184,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("month", nargs="?", help="YYYY-MM")
     rsub.add_parser("history", help="this machine's prompt history (history.jsonl)")
     rsub.add_parser("plans", help="plan-mode plans")
+    r = rsub.add_parser("cursor", help="one Cursor chat, back into its workspace folder")
+    r.add_argument("id_prefix", help="chat uuid or its first characters")
     for r in rsub.choices.values():
         r.add_argument("--dry-run", action="store_true", help="show what would be restored; change nothing")
     p.set_defaults(func=cmd_restore)

@@ -5,6 +5,7 @@ Rules (see docs/DESIGN.md for the reasons):
 - sessions ARCHIVE by start month, each bundled with subagents/, tool-results/, file-history/
 - plans    ARCHIVE
 - history  ARCHIVE, renamed history.<machine>.jsonl so machines never overwrite each other
+- cursor   ARCHIVE when ~/.cursor exists and cursor=on: chats by start month, projects as their own tree
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import ChronicleError, __version__, privacy, rclone, secrets, stage
+from . import cursor as cursor_mod
 from .config import Config, state_dir
 
 REMOTE_README = Path(__file__).with_name("remote_readme.md")
@@ -32,6 +34,8 @@ class BackupResult:
     secrets: secrets.ScanReport = field(default_factory=secrets.ScanReport)
     privacy: privacy.PrivacyResult | None = None
     failed: dict = field(default_factory=dict)
+    cursor: cursor_mod.CursorSummary = field(default_factory=cursor_mod.CursorSummary)
+    cursor_state: str = "absent"
 
 
 def run_id() -> str:
@@ -48,6 +52,10 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
         raise ChronicleError(f"no Claude Code data at {claude} (set claude_dir in the config)")
     run = run_id()
     result = BackupResult(run=run, dry_run=dry_run, log_file=log_path(run, "backup-dry" if dry_run else "backup"))
+    if cfg.cursor != "on":
+        result.cursor_state = "off"
+    elif cfg.cursor_dir.is_dir():
+        result.cursor_state = "on"
     progress = sys.stdout.isatty() and not dry_run and out is print
     note = "  (dry run: nothing is uploaded)" if dry_run else ""
     out(f"== backup {claude} → {cfg.dest}{note}")
@@ -107,6 +115,24 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
         if "history" in cfg.include and (claude / "history.jsonl").is_file():
             step("history", "copyto", str(claude / "history.jsonl"), f"{cfg.dest}/.claude/history.{cfg.machine}.jsonl")
 
+        if result.cursor_state == "on":
+            cursor_out = tmp / "cursor"
+            chats_ready = _cursor_stage("cursor-chats", cursor_mod.stage_chats, cfg.cursor_dir, cursor_out, result, out)
+            projects_ready = _cursor_stage("cursor-projects", cursor_mod.stage_projects, cfg.cursor_dir, cursor_out, result, out)
+            c = result.cursor
+            months = ", ".join(f"{m}: {n}" for m, n in c.months.items()) or "none"
+            out(f"  {'cursor':<14} {c.chats} chat(s) ({months}), {c.files} file(s), "
+                f"{c.bytes / 2**20:.1f} MiB, {c.snapshots} snapshotted, {len(c.skipped)} skipped (live)")
+            _log_skipped(result)
+            if c.skipped and c.chats == 0 and "cursor-chats" not in result.failed:
+                result.failed["cursor-chats"] = "nothing could be staged"
+                out(f"  {'cursor-chats':<14} FAILED: nothing could be staged")
+            elif chats_ready and (cursor_out / "chats").is_dir():
+                step("cursor-chats", "copy", str(cursor_out / "chats"), f"{cfg.dest}/.cursor/chats", "--copy-links")
+            if projects_ready and (cursor_out / "projects").is_dir():
+                step("cursor-projects", "copy", str(cursor_out / "projects"),
+                     f"{cfg.dest}/.cursor/projects", "--copy-links")
+
         step("readme", "copyto", str(REMOTE_README), f"{cfg.dest}/README.md")
 
     if not dry_run:
@@ -125,6 +151,26 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
     return result
 
 
+def _log_skipped(result: BackupResult) -> None:
+    if not result.cursor.skipped:
+        return
+    result.log_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(result.log_file, "a") as fh:
+        for path in result.cursor.skipped:
+            fh.write(f"cursor skipped (live): {path}\n")
+
+
+def _cursor_stage(name: str, fn, cursor_dir: Path, out_dir: Path, result: BackupResult, out) -> bool:
+    """Stage one Cursor tree. A failure is recorded and does not stop the other tree."""
+    try:
+        fn(cursor_dir, out_dir, result.cursor)
+    except (ChronicleError, OSError) as exc:
+        result.failed[name] = str(exc)
+        out(f"  {name:<14} FAILED: {exc}")
+        return False
+    return True
+
+
 def stamp(cfg: Config, result: BackupResult) -> str:
     return json.dumps({
         "tool": "cc-chronicle",
@@ -136,5 +182,14 @@ def stamp(cfg: Config, result: BackupResult) -> str:
         "sessions": result.staged.sessions,
         "sessions_by_month": result.staged.months,
         "session_bytes": result.staged.bytes,
+        "cursor": result.cursor_state,
+        "cursor_chats": result.cursor.chats,
+        "cursor_chats_by_month": result.cursor.months,
+        "cursor_files": result.cursor.files,
+        "cursor_bytes": result.cursor.bytes,
+        "cursor_snapshots": result.cursor.snapshots,
+        "cursor_skipped": len(result.cursor.skipped),
+        "cursor_project_files": result.cursor.project_files,
+        "cursor_project_bytes": result.cursor.project_bytes,
         "failed_steps": sorted(result.failed),
     }, indent=2) + "\n"

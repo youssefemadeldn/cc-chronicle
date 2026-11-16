@@ -10,7 +10,7 @@ So treat the archive like the machine itself: private, and only in storage you c
 
 ## The secret scanner
 
-Before every backup, cc-chronicle scans every file it is about to upload for well-known secret formats: Anthropic, OpenAI, GitHub, Google, AWS, Slack and Stripe keys, PEM private keys, and JWTs.
+Before every backup, cc-chronicle scans every file it is about to upload for well-known secret formats: Anthropic, OpenAI, GitHub, Google, AWS, Slack and Stripe keys, PEM private keys, and JWTs. A Cursor `store.db` is SQLite, so the scanner reads the text stored in it (and falls back to whatever bytes it can decode if the file will not open).
 
 - **Values are never shown, logged or stored.** Only the file path, the pattern name and a count are reported. The cache (`~/.local/state/cc-chronicle/secret-scan.json`) holds the same.
 - `cc-chronicle scan` lists every file with findings.

@@ -31,7 +31,7 @@ Below, `CLI` means whichever path you found. It needs Python 3.9+ and rclone. If
 | Health check | `CLI doctor` |
 | Likely secrets in what gets uploaded | `CLI scan` |
 | Daily automatic backup | `CLI schedule install [--time HH:MM]` · `status` · `uninstall` |
-| Restore | `CLI restore list [text]`, then `restore session <id-prefix>` / `restore project <text> [YYYY-MM]` / `restore memory [project]` / `restore history` / `restore plans` |
+| Restore | `CLI restore list [text]`, then `restore session <id-prefix>` / `restore project <text> [YYYY-MM]` / `restore memory [project]` / `restore history` / `restore plans` / `restore cursor <chat-uuid>` |
 
 ## Rules
 

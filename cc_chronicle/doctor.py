@@ -47,6 +47,7 @@ def checks(config_path=None) -> list:
     projects = cfg.claude_dir / "projects"
     add(OK if projects.is_dir() else FAIL, "claude dir", str(cfg.claude_dir) if projects.is_dir()
         else f"{cfg.claude_dir} has no projects/ folder")
+    add(*_cursor_check(cfg))
     add(*_cleanup_check(cfg))
 
     proc = rclone.run(["lsd", f"{cfg.remote}:", "--max-depth", "1"], check=False)
@@ -87,6 +88,33 @@ def _schedule_check() -> tuple:
     if code:
         return WARN, "daily backup", f"{detail} — the last run FAILED; see {config_mod.state_dir() / 'logs' / 'scheduled.log'}"
     return OK, "daily backup", detail
+
+
+def _cursor_check(cfg) -> tuple:
+    if cfg.cursor != "on":
+        return INFO, "cursor", "off (cursor = off)"
+    if not cfg.cursor_dir.is_dir():
+        return INFO, "cursor", f"no {cfg.cursor_dir} (nothing to back up)"
+    raw = rclone.cat(f"{cfg.dest}/last-backup.{cfg.machine}.json")
+    if not raw:
+        return INFO, "cursor", f"{cfg.cursor_dir} will be included on the next backup"
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return WARN, "cursor", "last backup stamp unreadable"
+    if "cursor_chats" not in data:
+        return INFO, "cursor", "last backup stamp has no Cursor counts yet"
+    mebi = data.get("cursor_bytes", 0) / 2**20
+    detail = (f"last run {data.get('cursor_chats', 0)} chat(s), {data.get('cursor_files', 0)} file(s), "
+              f"{mebi:.1f} MiB, {data.get('cursor_snapshots', 0)} snapshotted")
+    if "cursor_skipped" in data:
+        detail += f", {data['cursor_skipped']} skipped (live)"
+    failed = [name for name in (data.get("failed_steps") or []) if str(name).startswith("cursor")]
+    if failed:
+        return WARN, "cursor", f"{detail}; failed: {', '.join(failed)}"
+    if data.get("cursor") == "absent":
+        return INFO, "cursor", "last run found no ~/.cursor"
+    return OK, "cursor", detail
 
 
 def _cleanup_check(cfg) -> tuple:

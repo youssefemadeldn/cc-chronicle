@@ -28,6 +28,14 @@ class RemoteSession:
     local: bool
 
 
+@dataclass
+class RemoteChat:
+    month: str
+    workspace: str
+    chat_id: str
+    local: bool
+
+
 def remote_sessions(cfg: Config) -> list:
     """Every session in the archive, marked with whether this machine still has it."""
     proc = rclone.run(["lsf", "-R", "--files-only", "--format", "ps", "--separator", ";",
@@ -46,6 +54,28 @@ def remote_sessions(cfg: Config) -> list:
         local = (cfg.claude_dir / "projects" / project / name).exists()
         sessions.append(RemoteSession(month, project, name[:-6], int(size or 0), local))
     return sorted(sessions, key=lambda s: (s.month, s.project, s.session_id))
+
+
+def remote_chats(cfg: Config) -> list:
+    """Every Cursor chat in the archive, marked with whether this machine still has it."""
+    proc = rclone.run(["lsf", "-R", "--dirs-only", f"{cfg.dest}/.cursor/chats"], check=False)
+    if proc.returncode != 0:
+        if "not found" in proc.stderr.lower():
+            return []
+        raise rclone.RcloneError(f"rclone lsf failed: {proc.stderr.strip()[-300:]}")
+    chats = []
+    seen = set()
+    for line in proc.stdout.splitlines():
+        parts = [part for part in line.strip("/").split("/") if part]
+        if len(parts) != 3:
+            continue
+        month, workspace, chat_id = parts
+        if chat_id in seen:
+            continue
+        seen.add(chat_id)
+        local = (cfg.cursor_dir / "chats" / workspace / chat_id).exists()
+        chats.append(RemoteChat(month, workspace, chat_id, local))
+    return sorted(chats, key=lambda c: (c.month, c.workspace, c.chat_id))
 
 
 def _files(path: Path) -> set:
@@ -116,3 +146,16 @@ class Restorer:
         plans = self.cfg.claude_dir / "plans"
         return self._copy_fresh("plans", plans, "copy", f"{self.cfg.dest}/.claude/plans", str(plans),
                                 allow_missing=True)
+
+    def cursor_chat(self, id_prefix: str) -> RemoteChat:
+        matches = [c for c in remote_chats(self.cfg) if c.chat_id.startswith(id_prefix)]
+        if not matches:
+            raise ChronicleError(f"no archived Cursor chat starts with '{id_prefix}'")
+        if len(matches) > 1:
+            raise ChronicleError(f"'{id_prefix}' matches {len(matches)} Cursor chats — use a longer prefix")
+        chat = matches[0]
+        remote = f"{self.cfg.dest}/.cursor/chats/{chat.month}/{chat.workspace}/{chat.chat_id}"
+        local = self.cfg.cursor_dir / "chats" / chat.workspace / chat.chat_id
+        self.out(f"== cursor chat {chat.chat_id} ({chat.month}, {chat.workspace})")
+        self._copy_fresh("cursor", local, "copy", remote, str(local))
+        return chat

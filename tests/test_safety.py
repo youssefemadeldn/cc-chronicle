@@ -113,8 +113,8 @@ def test_doctor_reports_each_check(env):
     lines = []
     assert doctor.run(out=lines.append) == 0
     text = "\n".join(lines)
-    for name in ("python", "rclone", "config", "claude dir", "local cleanup", "remote", "archive sharing",
-                 "last backup"):
+    for name in ("python", "rclone", "config", "claude dir", "cursor", "local cleanup", "remote",
+                 "archive sharing", "last backup"):
         assert name in text
     assert "cleanupPeriodDays = 365" in text
     assert "none yet" in text
