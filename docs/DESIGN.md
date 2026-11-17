@@ -69,3 +69,5 @@ On when `~/.cursor` exists, unless the config says `cursor = off`. A machine wit
 - `copyto` (single file) refuses filter flags, so `.DS_Store` filtering is skipped for it.
 - `--timeout 60s`: after a network switch, stalled connections are dropped and retried within a minute instead of five.
 - Google Drive creates files one by one, so thousands of small sidecar files dominate the first upload's time, not its size.
+
+Linux CI for Python 3.9 runs on `ubuntu-24.04` because `ubuntu-latest` is Ubuntu 26.04 and `actions/setup-python` has no 3.9 build for it; the Mac that runs cc-chronicle every day is still Python 3.9, so that job stays.
