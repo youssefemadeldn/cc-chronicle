@@ -58,8 +58,17 @@ def cmd_backup(args) -> int:
 
 def cmd_scan(args) -> int:
     cfg = _load(args)
+    if args.list and not args.mark_samples:
+        raise ChronicleError("--list needs --mark-samples KIND")
+    if args.hash and not args.mark_samples:
+        raise ChronicleError("--hash needs --mark-samples KIND")
     if args.mark_samples:
-        secrets.mark_samples(cfg, args.mark_samples, yes=args.yes)
+        if args.list and (args.yes or args.hash):
+            raise ChronicleError("--list only lists hits; it does not take --yes or --hash")
+        if args.yes and args.hash:
+            raise ChronicleError("use either --yes or --hash")
+        secrets.mark_samples(cfg, args.mark_samples, yes=args.yes, list_only=args.list,
+                             only_hashes=args.hash)
         return 0
     report = secrets.scan(cfg)
     print(secrets.summary_line(report))
@@ -172,6 +181,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="mark unknown hits of this kind as samples (stores sha256 only)")
     p.add_argument("--yes", action="store_true",
                    help="with --mark-samples, mark every unknown hit of that kind")
+    p.add_argument("--list", action="store_true",
+                   help="with --mark-samples, list unknown hits and mark nothing")
+    p.add_argument("--hash", metavar="HASHES",
+                   help="with --mark-samples, mark these short hashes (comma-separated)")
     p.set_defaults(func=cmd_scan)
 
     p = sub.add_parser("schedule", help="daily automatic backups (launchd on macOS, systemd on Linux)")

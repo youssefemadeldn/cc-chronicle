@@ -294,11 +294,13 @@ def summary_line(report: ScanReport) -> str:
     return line
 
 
-def mark_samples(cfg: Config, kind: str, *, yes: bool = False) -> None:
-    """Store sha256 hashes of unknown hits of one kind. The value is never printed."""
-    if kind not in PATTERNS:
-        known = ", ".join(PATTERNS)
-        raise ChronicleError(f"unknown secret kind '{kind}' (known: {known})")
+def _hit_line(kind: str, digest: str, group: dict) -> str:
+    files = ", ".join(group["files"])
+    return f"{kind}  {digest[:12]}  ×{group['count']}  {files}"
+
+
+def _unknown_hits(cfg: Config, kind: str) -> dict:
+    """sha256 → {count, files} for hits of this kind that are not already samples."""
     known_hashes = set(cfg.sample_hashes)
     groups = {}
     for path in files_to_scan(cfg):
@@ -312,26 +314,76 @@ def mark_samples(cfg: Config, kind: str, *, yes: bool = False) -> None:
                 group["count"] += 1
                 if rel not in group["files"]:
                     group["files"].append(rel)
+    return groups
+
+
+def _matches_for(token: str, groups: dict) -> list:
+    return [digest for digest in groups if digest.startswith(token)]
+
+
+def _save_hashes(cfg: Config, chosen: list) -> None:
+    cfg.sample_hashes = tuple(sorted(set(cfg.sample_hashes).union(chosen)))
+    path = save(cfg)
+    print(f"saved {len(chosen)} sample hash(es) to {path}")
+
+
+def mark_samples(cfg: Config, kind: str, *, yes: bool = False, list_only: bool = False,
+                 only_hashes: str | None = None) -> None:
+    """Store sha256 hashes of unknown hits of one kind. The value is never printed."""
+    if kind not in PATTERNS:
+        known = ", ".join(PATTERNS)
+        raise ChronicleError(f"unknown secret kind '{kind}' (known: {known})")
+    groups = _unknown_hits(cfg, kind)
+    if list_only:
+        if not groups:
+            print(f"no unknown {kind} hits")
+            return
+        for digest in sorted(groups, key=lambda item: (-groups[item]["count"], item)):
+            print(_hit_line(kind, digest, groups[digest]))
+        return
+    if only_hashes is not None:
+        tokens = [item.strip().lower() for item in only_hashes.split(",") if item.strip()]
+        if not tokens:
+            raise ChronicleError("--hash needs at least one short hash")
+        chosen = []
+        for token in tokens:
+            if not re.fullmatch(r"[0-9a-f]+", token):
+                raise ChronicleError(f"unknown sample hash '{token}'")
+            matches = _matches_for(token, groups)
+            if not matches:
+                raise ChronicleError(f"unknown sample hash '{token}'")
+            if len(matches) > 1:
+                listed = "\n".join(f"  {_hit_line(kind, digest, groups[digest])}" for digest in sorted(matches))
+                raise ChronicleError(f"ambiguous sample hash '{token}' matches:\n{listed}")
+            if matches[0] not in chosen:
+                chosen.append(matches[0])
+        for digest in chosen:
+            print(f"marked {_hit_line(kind, digest, groups[digest])}")
+        _save_hashes(cfg, chosen)
+        return
     if not groups:
         print(f"no unknown {kind} hits")
         return
     if not yes and not sys.stdin.isatty():
         raise ChronicleError("--yes is required to mark samples when not running interactively")
     chosen = []
+    ended = False
     for digest in sorted(groups):
-        group = groups[digest]
-        files = ", ".join(group["files"])
-        line = f"{kind}  {digest[:12]}  ×{group['count']}  {files}"
+        line = _hit_line(kind, digest, groups[digest])
         if yes:
             print(f"marked {line}")
             chosen.append(digest)
             continue
-        answer = input(f"mark {line}? [y/N] ").strip().lower()
+        try:
+            answer = input(f"mark {line}? [y/N] ").strip().lower()
+        except EOFError:
+            ended = True
+            break
         if answer == "y":
             chosen.append(digest)
-    if not chosen:
+    if chosen:
+        _save_hashes(cfg, chosen)
+    else:
         print("no samples marked")
-        return
-    cfg.sample_hashes = tuple(sorted(set(cfg.sample_hashes).union(chosen)))
-    path = save(cfg)
-    print(f"saved {len(chosen)} sample hash(es) to {path}")
+    if ended:
+        print(summary_line(scan(cfg)))

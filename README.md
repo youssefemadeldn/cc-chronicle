@@ -98,7 +98,7 @@ Restored sessions go back to their original project folder, and `claude --resume
 | `backup [--dry-run] [--strict-secrets] [--bwlimit VALUE]` | Scan for secrets, then upload what changed. `--bwlimit` overrides the config cap for this run; `off` removes it |
 | `status` | Last backup, and what a backup would upload now |
 | `restore <list\|session\|project\|memory\|history\|plans\|cursor>` | Bring data back; never overwrites |
-| `scan [--mark-samples KIND] [--yes]` | List files containing likely secrets (values never shown). Samples are counted separately. `--mark-samples` stores sha256 hashes of the unknown hits of that kind; `--yes` marks all of them |
+| `scan [--mark-samples KIND] [--yes] [--list] [--hash HASHES]` | List files containing likely secrets (values never shown). Samples are counted separately. `--mark-samples` stores sha256 hashes of unknown hits of that kind. `--list` prints those hits and marks nothing. `--hash` marks the named short hashes. `--yes` marks all of them |
 | `schedule <install\|uninstall\|status> [--time HH:MM]` | Daily automatic backups |
 | `doctor` | Check Python, rclone, config, remote, sharing, last backup and schedule |
 

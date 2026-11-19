@@ -219,3 +219,126 @@ def test_doctor_counts_samples_apart_from_findings(env):
     assert "1 sample(s)" in text
     assert "1 likely secret" in text
     assert sample not in text and real not in text
+
+
+def _aws_body(n: int) -> str:
+    return "AK" + "IA" + f"{n:08X}" + "M4QZE5FG"
+
+
+def test_end_of_input_marks_nothing_further(env, capsys, monkeypatch):
+    cfg, claude, _archive = env
+    first = _aws_body(1)
+    second = _aws_body(2)
+    write(claude / "plans" / "both.md", first + "\n" + second + "\n")
+    save(cfg)
+    answers = iter(["y"])
+
+    def answer(prompt):
+        try:
+            return next(answers)
+        except StopIteration:
+            raise EOFError
+
+    monkeypatch.setattr("builtins.input", answer)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    assert main(["scan", "--mark-samples", "aws-access-key"]) == 0
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert first not in captured.out and second not in captured.out
+    stored = load().sample_hashes
+    assert len(stored) == 1
+    assert stored[0] in (hashlib.sha256(first.encode()).hexdigest(), hashlib.sha256(second.encode()).hexdigest())
+    assert "likely secret" in captured.out
+
+
+def test_end_of_input_before_any_answer_marks_nothing(env, capsys, monkeypatch):
+    cfg, claude, _archive = env
+    value = _aws_body(3)
+    write(claude / "plans" / "one.md", value)
+    save(cfg)
+    monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(EOFError))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    assert main(["scan", "--mark-samples", "aws-access-key"]) == 0
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert value not in captured.out
+    assert load().sample_hashes == ()
+    assert "no samples marked" in captured.out
+    assert "likely secret" in captured.out
+
+
+def test_list_prints_hits_and_stores_nothing(env, capsys):
+    cfg, claude, _archive = env
+    often = _aws_body(4)
+    once = _aws_body(5)
+    write(claude / "plans" / "a.md", often + "\n" + often + "\n" + once + "\n")
+    write(claude / "plans" / "b.md", often + "\n")
+    save(cfg)
+    assert main(["scan", "--mark-samples", "aws-access-key", "--list"]) == 0
+    out = capsys.readouterr().out
+    often_hash = hashlib.sha256(often.encode()).hexdigest()[:12]
+    once_hash = hashlib.sha256(once.encode()).hexdigest()[:12]
+    assert often not in out and once not in out
+    assert often_hash in out and once_hash in out
+    assert "plans/a.md" in out and "plans/b.md" in out
+    assert out.index(often_hash) < out.index(once_hash)
+    assert load().sample_hashes == ()
+
+
+def test_hash_marks_only_the_named_hits(env, capsys):
+    cfg, claude, _archive = env
+    keep = _aws_body(6)
+    leave = _aws_body(7)
+    write(claude / "plans" / "pick.md", keep + "\n" + leave + "\n")
+    save(cfg)
+    short = hashlib.sha256(keep.encode()).hexdigest()[:12]
+    assert main(["scan", "--mark-samples", "aws-access-key", "--hash", short]) == 0
+    out = capsys.readouterr().out
+    assert keep not in out and leave not in out
+    assert short in out
+    assert load().sample_hashes == (hashlib.sha256(keep.encode()).hexdigest(),)
+    report = secrets.scan(load())
+    assert report.sample_total == 1 and report.total == 1
+
+
+def test_unknown_short_hash_is_refused(env, capsys):
+    cfg, claude, _archive = env
+    value = _aws_body(8)
+    write(claude / "plans" / "one.md", value)
+    save(cfg)
+    digest = hashlib.sha256(value.encode()).hexdigest()
+    bogus = "000000000000" if not digest.startswith("0") else "fffffffff"
+    assert main(["scan", "--mark-samples", "aws-access-key", "--hash", bogus]) == 1
+    captured = capsys.readouterr()
+    assert "unknown sample hash" in captured.err
+    assert value not in captured.out and value not in captured.err
+    assert load().sample_hashes == ()
+
+
+def test_ambiguous_short_hash_is_refused(env, capsys):
+    cfg, claude, _archive = env
+    found = None
+    for n in range(1, 80):
+        for m in range(n + 1, 80):
+            left, right = _aws_body(n), _aws_body(m)
+            d1 = hashlib.sha256(left.encode()).hexdigest()
+            d2 = hashlib.sha256(right.encode()).hexdigest()
+            shared = 0
+            while shared < 12 and d1[shared] == d2[shared]:
+                shared += 1
+            if shared:
+                found = (left, right, d1[:shared])
+                break
+        if found:
+            break
+    assert found is not None
+    left, right, prefix = found
+    write(claude / "plans" / "pair.md", left + "\n" + right + "\n")
+    save(cfg)
+    assert main(["scan", "--mark-samples", "aws-access-key", "--hash", prefix]) == 1
+    captured = capsys.readouterr()
+    assert "ambiguous sample hash" in captured.err
+    assert hashlib.sha256(left.encode()).hexdigest()[:12] in captured.err
+    assert hashlib.sha256(right.encode()).hexdigest()[:12] in captured.err
+    assert left not in captured.err and right not in captured.err
+    assert load().sample_hashes == ()
