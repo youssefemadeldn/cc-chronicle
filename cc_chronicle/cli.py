@@ -57,7 +57,11 @@ def cmd_backup(args) -> int:
 
 
 def cmd_scan(args) -> int:
-    report = secrets.scan(_load(args))
+    cfg = _load(args)
+    if args.mark_samples:
+        secrets.mark_samples(cfg, args.mark_samples, yes=args.yes)
+        return 0
+    report = secrets.scan(cfg)
     print(secrets.summary_line(report))
     for path, counts in sorted(report.findings.items()):
         kinds = ", ".join(f"{name} ×{n}" for name, n in sorted(counts.items()))
@@ -164,6 +168,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("scan", help="list files that contain likely secrets (values are never shown)")
+    p.add_argument("--mark-samples", metavar="KIND",
+                   help="mark unknown hits of this kind as samples (stores sha256 only)")
+    p.add_argument("--yes", action="store_true",
+                   help="with --mark-samples, mark every unknown hit of that kind")
     p.set_defaults(func=cmd_scan)
 
     p = sub.add_parser("schedule", help="daily automatic backups (launchd on macOS, systemd on Linux)")

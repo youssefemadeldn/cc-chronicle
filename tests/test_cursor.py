@@ -25,7 +25,7 @@ NOV_MS = int(datetime(2026, 11, 1, tzinfo=timezone.utc).timestamp() * 1000)
 OCT_TIME = datetime(2026, 10, 20, 12).timestamp()
 
 # Assembled at runtime so this file never contains a key-shaped string.
-TOKEN = "gh" + "p_" + "C" * 36
+TOKEN = "gh" + "p_" + "C3a" * 12
 OTHER = "sk-" + "proj-" + "B2" * 20
 
 

@@ -52,6 +52,7 @@ class Config:
     claude_dir: Path = field(default_factory=default_claude_dir)
     include: tuple = INCLUDE_ALL
     secrets_on_found: str = "warn"
+    sample_hashes: tuple = ()
     cursor: str = "on"
     cursor_dir: Path = field(default_factory=default_cursor_dir)
     bwlimit: str = DEFAULT_BWLIMIT
@@ -71,6 +72,9 @@ class Config:
             raise ChronicleError(f"config: unknown include item(s): {', '.join(sorted(unknown))}")
         if self.secrets_on_found not in SECRETS_MODES:
             raise ChronicleError(f"config: secrets_on_found must be one of {', '.join(SECRETS_MODES)}")
+        bad = [item for item in self.sample_hashes if not re.fullmatch(r"[0-9a-f]{64}", item)]
+        if bad:
+            raise ChronicleError("config: sample_hashes entries must be sha256 hex digests")
         if self.cursor not in CURSOR_MODES:
             raise ChronicleError(f"config: cursor must be one of {', '.join(CURSOR_MODES)}")
         if not self.bwlimit.strip():
@@ -94,6 +98,8 @@ def load(path: Path | None = None) -> Config:
         claude_dir=Path(os.path.expanduser(section.get("claude_dir", str(default_claude_dir())).strip())),
         include=tuple(item.strip() for item in include.split(",") if item.strip()),
         secrets_on_found=section.get("secrets_on_found", "warn").strip(),
+        sample_hashes=tuple(
+            item.strip().lower() for item in section.get("sample_hashes", "").split(",") if item.strip()),
         cursor=section.get("cursor", "on").strip(),
         cursor_dir=Path(os.path.expanduser(section.get("cursor_dir", str(default_cursor_dir())).strip())),
         bwlimit=section.get("bwlimit", DEFAULT_BWLIMIT).strip(),
@@ -114,11 +120,13 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "claude_dir": str(cfg.claude_dir),
         "include": ",".join(cfg.include),
         "secrets_on_found": cfg.secrets_on_found,
+        "sample_hashes": ",".join(cfg.sample_hashes),
         "cursor": cfg.cursor,
         "cursor_dir": str(cfg.cursor_dir),
         "bwlimit": cfg.bwlimit,
     }
     with open(path, "w") as fh:
         fh.write("# cc-chronicle config. No secrets here: credentials stay in rclone.conf.\n")
+        fh.write("# sample_hashes, when set, are sha256 digests only.\n")
         parser.write(fh)
     return path

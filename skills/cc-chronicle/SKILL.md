@@ -36,7 +36,7 @@ Below, `CLI` means whichever path you found. It needs Python 3.9+ and rclone. If
 ## Rules
 
 - **Restore:** always run `restore list` first, show the user the missing sessions (month, project, size), and restore only what they choose (AskUserQuestion). Don't restore everything: Claude Code deletes local sessions after ~30 days, so a bulk restore just gets cleaned up again. Restore never overwrites local files.
-- **Secrets:** `scan` shows file paths and pattern names, never values. Don't open those files to show the user the secret. Advise rotating the key at its provider, and mention `--strict-secrets` / `secrets_on_found = abort` and encryption.
+- **Secrets:** `scan` shows file paths and pattern names, never values. Published examples, obvious fakes, and hashes the user marked are counted as samples, apart from findings. Don't open those files to show the user the secret. Advise rotating the key at its provider, and mention `--strict-secrets` / `secrets_on_found = abort` and encryption.
 - **Sharing:** if a backup or doctor reports the archive folder as shared, tell the user plainly. Never change sharing yourself.
 - **Schedule:** installing adds a background job to the user's system. Ask before `schedule install`, and say how to remove it (`schedule uninstall`).
 - On errors, show the failing line and the log path the CLI printed. Don't retry the same command more than once.

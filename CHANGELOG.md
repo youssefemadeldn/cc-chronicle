@@ -5,6 +5,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- Secret scan counts published examples, obvious fakes, and user-marked sha256 hashes as samples instead of findings. `cc-chronicle scan --mark-samples KIND` stores those hashes without printing the value. `scan` and `doctor` show the sample count apart from findings.
 - Uploads use a speed cap (`bwlimit`, default slow around 10:00 and 22:00) so a large backup does not take the whole home line. `backup --bwlimit off` removes it for one run.
 - Cursor chats and project files are archived next to Claude sessions (`<remote>/.cursor/`), on by default when `~/.cursor` exists. Chats are filed by start month. A live `store.db` is snapshotted with SQLite's backup API. `restore cursor <uuid>` brings one chat back without overwriting it. Set `cursor = off` to skip this.
 

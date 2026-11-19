@@ -10,11 +10,15 @@ from cc_chronicle.config import Config, default_claude_dir, default_machine, loa
 
 def test_config_round_trip(tmp_path):
     path = tmp_path / "config.ini"
-    save(Config(remote="gdrive", root="archive", machine="mac", claude_dir=Path("/x/.claude")), path)
+    digest = "ab" * 32
+    save(Config(remote="gdrive", root="archive", machine="mac", claude_dir=Path("/x/.claude"),
+                sample_hashes=(digest,)), path)
     cfg = load(path)
     assert cfg.dest == "gdrive:archive"
     assert cfg.machine == "mac" and cfg.claude_dir == Path("/x/.claude")
     assert cfg.include == ("memory", "sessions", "plans", "history")
+    assert cfg.sample_hashes == (digest,)
+    assert digest in path.read_text()
 
 
 def test_load_keeps_absolute_root_and_drops_trailing_slash(tmp_path):
@@ -33,6 +37,10 @@ def test_invalid_config_is_rejected(tmp_path):
         Config(remote="g", include=("memory", "photos")).validate()
     with pytest.raises(ChronicleError, match="cursor"):
         Config(remote="g", cursor="maybe").validate()
+    path = tmp_path / "bad-hash.ini"
+    path.write_text("[cc-chronicle]\nremote = t\nmachine = box\nsample_hashes = not-a-hash\n")
+    with pytest.raises(ChronicleError, match="sample_hashes"):
+        load(path)
 
 
 def test_old_config_backs_up_cursor_when_the_directory_exists(tmp_path, monkeypatch):
@@ -40,6 +48,7 @@ def test_old_config_backs_up_cursor_when_the_directory_exists(tmp_path, monkeypa
     path = tmp_path / "config.ini"
     path.write_text("[cc-chronicle]\nremote = t\nroot = archive\nmachine = box\n")
     cfg = load(path)
+    assert cfg.sample_hashes == ()
     assert cfg.cursor == "on"
     assert cfg.cursor_dir == Path.home() / ".cursor"
 

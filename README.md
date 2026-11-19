@@ -98,7 +98,7 @@ Restored sessions go back to their original project folder, and `claude --resume
 | `backup [--dry-run] [--strict-secrets] [--bwlimit VALUE]` | Scan for secrets, then upload what changed. `--bwlimit` overrides the config cap for this run; `off` removes it |
 | `status` | Last backup, and what a backup would upload now |
 | `restore <list\|session\|project\|memory\|history\|plans\|cursor>` | Bring data back; never overwrites |
-| `scan` | List files containing likely secrets (values never shown) |
+| `scan [--mark-samples KIND] [--yes]` | List files containing likely secrets (values never shown). Samples are counted separately. `--mark-samples` stores sha256 hashes of the unknown hits of that kind; `--yes` marks all of them |
 | `schedule <install\|uninstall\|status> [--time HH:MM]` | Daily automatic backups |
 | `doctor` | Check Python, rclone, config, remote, sharing, last backup and schedule |
 
@@ -116,6 +116,8 @@ claude_dir = /Users/me/.claude
 include = memory,sessions,plans,history
 # "abort": upload nothing when new or changed files contain likely secrets
 secrets_on_found = warn
+# sha256 hashes of values you marked as samples. The values themselves are never stored.
+sample_hashes =
 # Cursor chats and projects, archived when ~/.cursor exists. "off" skips them.
 cursor = on
 cursor_dir = /Users/me/.cursor

@@ -7,7 +7,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import ChronicleError, rclone
+from . import ChronicleError, rclone, secrets
 from . import config as config_mod
 from . import privacy, schedule
 
@@ -52,6 +52,7 @@ def checks(config_path=None) -> list:
         else f"{cfg.claude_dir} has no projects/ folder")
     add(*_cursor_check(cfg))
     add(*_cleanup_check(cfg))
+    add(*_secrets_check(cfg))
 
     proc = rclone.run(["lsd", f"{cfg.remote}:", "--max-depth", "1"], check=False)
     if proc.returncode != 0:
@@ -91,6 +92,11 @@ def _schedule_check() -> tuple:
     if code:
         return WARN, "daily backup", f"{detail} — the last run FAILED; see {config_mod.state_dir() / 'logs' / 'scheduled.log'}"
     return OK, "daily backup", detail
+
+
+def _secrets_check(cfg) -> tuple:
+    report = secrets.scan(cfg)
+    return (WARN if report.findings else OK), "secrets", secrets.summary_line(report)
 
 
 def _cursor_check(cfg) -> tuple:

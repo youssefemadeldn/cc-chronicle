@@ -12,7 +12,7 @@ So treat the archive like the machine itself: private, and only in storage you c
 
 Before every backup, cc-chronicle scans every file it is about to upload for well-known secret formats: Anthropic, OpenAI, GitHub, Google, AWS, Slack and Stripe keys, PEM private keys, and JWTs. A Cursor `store.db` is SQLite, so the scanner reads the text stored in it (and falls back to whatever bytes it can decode if the file will not open).
 
-- **Values are never shown, logged or stored.** Only the file path, the pattern name and a count are reported. The cache (`~/.local/state/cc-chronicle/secret-scan.json`) holds the same.
+- **Values are never shown, logged or stored.** Only the file path, the pattern name and a count are reported. The cache (`~/.local/state/cc-chronicle/secret-scan.json`) holds the same. A published example, an obvious fake, or a sha256 you marked (`sample_hashes` in the config) is a sample: `scan` and `doctor` count it apart from findings, and it does not block a backup. `cc-chronicle scan --mark-samples KIND` stores those hashes and never prints the value.
 - `cc-chronicle scan` lists every file with findings.
 - By default a backup **warns** and continues. To stop the upload when new or changed files contain likely secrets, either:
   - run `cc-chronicle backup --strict-secrets`, or
@@ -59,6 +59,6 @@ Full guide: <https://rclone.org/drive/#making-your-own-client-id>. `cc-chronicle
 
 | File | Contents |
 |---|---|
-| `~/.config/cc-chronicle/config.ini` | Remote name, folder, machine name, options. **No credentials**: those stay in `rclone.conf` |
+| `~/.config/cc-chronicle/config.ini` | Remote name, folder, machine name, options, and sha256 hashes of values marked as samples. **No credentials and no secret values**: credentials stay in `rclone.conf` |
 | `~/.local/state/cc-chronicle/logs/` | rclone logs: file paths and actions, no file contents |
 | `~/.local/state/cc-chronicle/secret-scan.json` | File paths, sizes, times, and per-pattern counts. No values |
