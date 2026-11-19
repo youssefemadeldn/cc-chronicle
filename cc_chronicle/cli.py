@@ -52,7 +52,7 @@ def cmd_init(args) -> int:
 
 
 def cmd_backup(args) -> int:
-    backup(_load(args), dry_run=args.dry_run, strict_secrets=args.strict_secrets)
+    backup(_load(args), dry_run=args.dry_run, strict_secrets=args.strict_secrets, bwlimit=args.bwlimit)
     return 0
 
 
@@ -91,8 +91,14 @@ def cmd_doctor(args) -> int:
     return doctor.run(Path(args.config) if args.config else None)
 
 
+def _cap_line(bwlimit: str) -> str:
+    cap = bwlimit.strip()
+    return "off" if cap == "off" else cap
+
+
 def cmd_status(args) -> int:
     cfg = _load(args)
+    print(f"upload cap: {_cap_line(cfg.bwlimit)}")
     print(f"== last backup ({cfg.machine})")
     print(rclone.cat(f"{cfg.dest}/last-backup.{cfg.machine}.json") or "  none yet\n")
     print("== pending (what a backup would do now)")
@@ -153,6 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="show what would be uploaded; change nothing")
     p.add_argument("--strict-secrets", action="store_true",
                    help="upload nothing if new or changed files contain likely secrets")
+    p.add_argument("--bwlimit",
+                   help="upload speed cap for this run (rclone --bwlimit, timetable allowed); off removes it")
     p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("scan", help="list files that contain likely secrets (values are never shown)")

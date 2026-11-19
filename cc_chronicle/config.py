@@ -14,6 +14,8 @@ INCLUDE_ALL = ("memory", "sessions", "plans", "history")
 SECRETS_MODES = ("warn", "abort")
 CURSOR_MODES = ("on", "off")
 DEFAULT_ROOT = "cc-chronicle"
+# Local time. Slow around the 10:00 and 22:00 digests; 256 KiB/s otherwise.
+DEFAULT_BWLIMIT = "09:45,16k 10:30,256k 21:45,16k 22:30,256k"
 
 
 def config_path() -> Path:
@@ -52,6 +54,7 @@ class Config:
     secrets_on_found: str = "warn"
     cursor: str = "on"
     cursor_dir: Path = field(default_factory=default_cursor_dir)
+    bwlimit: str = DEFAULT_BWLIMIT
 
     @property
     def dest(self) -> str:
@@ -70,6 +73,8 @@ class Config:
             raise ChronicleError(f"config: secrets_on_found must be one of {', '.join(SECRETS_MODES)}")
         if self.cursor not in CURSOR_MODES:
             raise ChronicleError(f"config: cursor must be one of {', '.join(CURSOR_MODES)}")
+        if not self.bwlimit.strip():
+            raise ChronicleError("config: bwlimit is empty; use off to remove the cap")
 
 
 def load(path: Path | None = None) -> Config:
@@ -91,6 +96,7 @@ def load(path: Path | None = None) -> Config:
         secrets_on_found=section.get("secrets_on_found", "warn").strip(),
         cursor=section.get("cursor", "on").strip(),
         cursor_dir=Path(os.path.expanduser(section.get("cursor_dir", str(default_cursor_dir())).strip())),
+        bwlimit=section.get("bwlimit", DEFAULT_BWLIMIT).strip(),
     )
     cfg.validate()
     return cfg
@@ -110,6 +116,7 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "secrets_on_found": cfg.secrets_on_found,
         "cursor": cfg.cursor,
         "cursor_dir": str(cfg.cursor_dir),
+        "bwlimit": cfg.bwlimit,
     }
     with open(path, "w") as fh:
         fh.write("# cc-chronicle config. No secrets here: credentials stay in rclone.conf.\n")

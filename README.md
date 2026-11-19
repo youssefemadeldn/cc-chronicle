@@ -95,7 +95,7 @@ Restored sessions go back to their original project folder, and `claude --resume
 | Command | What it does |
 |---|---|
 | `init` | Create the config: rclone remote, folder, machine name |
-| `backup [--dry-run] [--strict-secrets]` | Scan for secrets, then upload what changed |
+| `backup [--dry-run] [--strict-secrets] [--bwlimit VALUE]` | Scan for secrets, then upload what changed. `--bwlimit` overrides the config cap for this run; `off` removes it |
 | `status` | Last backup, and what a backup would upload now |
 | `restore <list\|session\|project\|memory\|history\|plans\|cursor>` | Bring data back; never overwrites |
 | `scan` | List files containing likely secrets (values never shown) |
@@ -119,6 +119,9 @@ secrets_on_found = warn
 # Cursor chats and projects, archived when ~/.cursor exists. "off" skips them.
 cursor = on
 cursor_dir = /Users/me/.cursor
+# Upload speed cap (rclone --bwlimit). Timetable is local time: slow around 10:00 and 22:00.
+# "off" removes the cap. `cc-chronicle backup --bwlimit VALUE` overrides this for one run.
+bwlimit = 09:45,16k 10:30,256k 21:45,16k 22:30,256k
 ```
 
 No credentials are stored here: rclone keeps those in its own config.

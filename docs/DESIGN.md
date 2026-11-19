@@ -8,6 +8,7 @@ Why cc-chronicle works the way it does. Change a rule here first, then in the co
 |---|---|
 | **rclone does all transfers** | Bulk, incremental and resumable, with 70+ storage backends and their authentication handled by rclone. cc-chronicle never sees credentials. |
 | **One wrapper (`rclone.py`) for every rclone call** | The rules below come down to exact flags. Keeping them in one place stops a stray `sync` from deleting an archive. |
+| **Uploads are speed-capped** | On 18 Nov 2026 a ~2.9 GB Cursor upload held the home line (~50 KB/s) for ~20 hours: other work failed for ~6 hours and the 10 PM digest was 30 minutes late. Every upload (`copy`, `sync`, `copyto`) passes `--bwlimit`. Default `09:45,16k 10:30,256k 21:45,16k 22:30,256k` (local time): 16 KiB/s around the 10:00 and 22:00 digests, 256 KiB/s otherwise. `bwlimit = off` or `backup --bwlimit off` removes it. Read-only calls are uncapped. |
 | **Python standard library only** | Installs anywhere with nothing to resolve. Tests use pytest, but the tool doesn't. |
 
 ## What is mirrored and what is archived

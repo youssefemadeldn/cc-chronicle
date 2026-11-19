@@ -46,7 +46,8 @@ def log_path(run: str, kind: str) -> Path:
     return state_dir() / "logs" / f"{run}-{kind}.log"
 
 
-def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, out=print) -> BackupResult:
+def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False,
+           bwlimit: str | None = None, out=print) -> BackupResult:
     claude = cfg.claude_dir
     if not (claude / "projects").is_dir():
         raise ChronicleError(f"no Claude Code data at {claude} (set claude_dir in the config)")
@@ -57,6 +58,9 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
     elif cfg.cursor_dir.is_dir():
         result.cursor_state = "on"
     progress = sys.stdout.isatty() and not dry_run and out is print
+    limit = cfg.bwlimit if bwlimit is None else bwlimit
+    if not str(limit).strip():
+        raise ChronicleError("bwlimit is empty; use off to remove the cap")
     note = "  (dry run: nothing is uploaded)" if dry_run else ""
     out(f"== backup {claude} → {cfg.dest}{note}")
 
@@ -75,7 +79,8 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False, 
     def step(name: str, *args: str, **kwargs) -> None:
         # One failed step (say, a file that kept changing) must not cost the others their upload.
         try:
-            n = rclone.transfer(*args, log_file=result.log_file, dry_run=dry_run, progress=progress, **kwargs)
+            n = rclone.transfer(*args, log_file=result.log_file, dry_run=dry_run, progress=progress,
+                                bwlimit=limit, **kwargs)
         except rclone.RcloneError as exc:
             result.failed[name] = str(exc)
             out(f"  {name:<14} FAILED: {exc}")

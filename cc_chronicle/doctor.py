@@ -44,6 +44,9 @@ def checks(config_path=None) -> list:
         add(FAIL, "config", str(exc))
         return results
 
+    cap = cfg.bwlimit.strip()
+    add(INFO if cap == "off" else OK, "upload cap", "off" if cap == "off" else cap)
+
     projects = cfg.claude_dir / "projects"
     add(OK if projects.is_dir() else FAIL, "claude dir", str(cfg.claude_dir) if projects.is_dir()
         else f"{cfg.claude_dir} has no projects/ folder")

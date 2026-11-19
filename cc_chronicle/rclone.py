@@ -41,15 +41,20 @@ def run(args: list, *, check: bool = True, input_text: str | None = None) -> sub
 
 
 def transfer(command: str, src: str, dst: str, *extra: str, log_file: Path, dry_run: bool = False,
-             progress: bool = False, allow_missing: bool = False) -> int:
+             progress: bool = False, allow_missing: bool = False, bwlimit: str | None = None) -> int:
     """Run one copy/sync/copyto step, append its log to log_file, return the number of file actions.
 
     allow_missing: a source that doesn't exist counts as 0 actions instead of an error.
+    bwlimit: rclone --bwlimit value for this upload. "off" or empty means no cap.
+    Read-only commands go through run() and never get a cap.
     """
     args = [command, src, dst]
     if command != "copyto":  # rclone refuses filters on a single-file copy
         args += SKIP_DS_STORE
     args += [*extra, *TRANSFER_FLAGS, "-v"]
+    cap = (bwlimit or "").strip()
+    if cap and cap != "off":
+        args += ["--bwlimit", cap]
     if dry_run:
         args.append("--dry-run")
     if progress:
