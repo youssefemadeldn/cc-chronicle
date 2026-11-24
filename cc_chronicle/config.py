@@ -14,8 +14,14 @@ INCLUDE_ALL = ("memory", "sessions", "plans", "history")
 SECRETS_MODES = ("warn", "abort")
 CURSOR_MODES = ("on", "off")
 DEFAULT_ROOT = "cc-chronicle"
-# Local time. Slow around the 10:00 and 22:00 digests; 256 KiB/s otherwise.
-DEFAULT_BWLIMIT = "09:45,16k 10:30,256k 21:45,16k 22:30,256k"
+# Local time. Slow around the 10:00 and 22:00 digests; 64 KiB/s otherwise
+# (about half of a 1 Mbps upload — see docs/DESIGN.md).
+DEFAULT_BWLIMIT = "09:45,16k 10:30,64k 21:45,16k 22:30,64k"
+# Extra tries after a network error, then seconds to wait before each one.
+DEFAULT_NETWORK_RETRIES = 3
+DEFAULT_NETWORK_RETRY_WAITS = (30, 90, 180)
+DEFAULT_RETRIES_SLEEP = "10s"
+DEFAULT_LOW_LEVEL_RETRIES = 10
 
 
 def config_path() -> Path:
@@ -28,6 +34,11 @@ def config_path() -> Path:
 def state_dir() -> Path:
     base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     return Path(base) / "cc-chronicle"
+
+
+def local_stamp_path(machine: str) -> Path:
+    """Fallback copy of last-backup.<machine>.json when the remote write fails."""
+    return state_dir() / f"last-backup.{machine}.json"
 
 
 def default_claude_dir() -> Path:
@@ -56,6 +67,10 @@ class Config:
     cursor: str = "on"
     cursor_dir: Path = field(default_factory=default_cursor_dir)
     bwlimit: str = DEFAULT_BWLIMIT
+    network_retries: int = DEFAULT_NETWORK_RETRIES
+    network_retry_waits: tuple = DEFAULT_NETWORK_RETRY_WAITS
+    retries_sleep: str = DEFAULT_RETRIES_SLEEP
+    low_level_retries: int = DEFAULT_LOW_LEVEL_RETRIES
 
     @property
     def dest(self) -> str:
@@ -79,6 +94,31 @@ class Config:
             raise ChronicleError(f"config: cursor must be one of {', '.join(CURSOR_MODES)}")
         if not self.bwlimit.strip():
             raise ChronicleError("config: bwlimit is empty; use off to remove the cap")
+        if isinstance(self.network_retries, bool) or not isinstance(self.network_retries, int) or self.network_retries < 0:
+            raise ChronicleError("config: network_retries must be a whole number")
+        waits = self.network_retry_waits
+        if isinstance(waits, (str, bytes)) or not waits or any(
+                isinstance(n, bool) or not isinstance(n, int) or n < 0 for n in waits):
+            raise ChronicleError("config: network_retry_waits must be whole numbers of seconds")
+        if not re.fullmatch(r"\d+(?:\.\d+)?(?:ms|s|m|h)", self.retries_sleep.strip()):
+            raise ChronicleError("config: retries_sleep must be a duration such as 10s")
+        if isinstance(self.low_level_retries, bool) or not isinstance(self.low_level_retries, int) or self.low_level_retries < 1:
+            raise ChronicleError("config: low_level_retries must be a whole number")
+
+
+def _whole(section, key: str, default: int, minimum: int) -> int:
+    raw = section.get(key, str(default)).strip()
+    if not re.fullmatch(r"\d+", raw) or int(raw) < minimum:
+        raise ChronicleError(f"config: {key} must be a whole number")
+    return int(raw)
+
+
+def _waits(section) -> tuple:
+    raw = section.get("network_retry_waits", ",".join(str(n) for n in DEFAULT_NETWORK_RETRY_WAITS)).strip()
+    parts = [item.strip() for item in raw.split(",") if item.strip()]
+    if not parts or any(not re.fullmatch(r"\d+", item) for item in parts):
+        raise ChronicleError("config: network_retry_waits must be whole numbers of seconds, comma-separated")
+    return tuple(int(item) for item in parts)
 
 
 def load(path: Path | None = None) -> Config:
@@ -103,6 +143,10 @@ def load(path: Path | None = None) -> Config:
         cursor=section.get("cursor", "on").strip(),
         cursor_dir=Path(os.path.expanduser(section.get("cursor_dir", str(default_cursor_dir())).strip())),
         bwlimit=section.get("bwlimit", DEFAULT_BWLIMIT).strip(),
+        network_retries=_whole(section, "network_retries", DEFAULT_NETWORK_RETRIES, minimum=0),
+        network_retry_waits=_waits(section),
+        retries_sleep=section.get("retries_sleep", DEFAULT_RETRIES_SLEEP).strip(),
+        low_level_retries=_whole(section, "low_level_retries", DEFAULT_LOW_LEVEL_RETRIES, minimum=1),
     )
     cfg.validate()
     return cfg
@@ -124,6 +168,10 @@ def save(cfg: Config, path: Path | None = None) -> Path:
         "cursor": cfg.cursor,
         "cursor_dir": str(cfg.cursor_dir),
         "bwlimit": cfg.bwlimit,
+        "network_retries": str(cfg.network_retries),
+        "network_retry_waits": ",".join(str(n) for n in cfg.network_retry_waits),
+        "retries_sleep": cfg.retries_sleep,
+        "low_level_retries": str(cfg.low_level_retries),
     }
     with open(path, "w") as fh:
         fh.write("# cc-chronicle config. No secrets here: credentials stay in rclone.conf.\n")

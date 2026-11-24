@@ -13,6 +13,8 @@ from . import privacy, schedule
 
 MIN_RCLONE = (1, 60)
 OK, INFO, WARN, FAIL = "ok", "info", "warn", "FAIL"
+PARTS = ("memory", "sessions", "file-history", "plans", "history",
+         "cursor-chats", "cursor-projects", "readme")
 
 
 def _rclone_version() -> tuple:
@@ -104,12 +106,10 @@ def _cursor_check(cfg) -> tuple:
         return INFO, "cursor", "off (cursor = off)"
     if not cfg.cursor_dir.is_dir():
         return INFO, "cursor", f"no {cfg.cursor_dir} (nothing to back up)"
-    raw = rclone.cat(f"{cfg.dest}/last-backup.{cfg.machine}.json")
-    if not raw:
+    data, _raw = newest_stamp(cfg)
+    if data is None:
         return INFO, "cursor", f"{cfg.cursor_dir} will be included on the next backup"
-    try:
-        data = json.loads(raw)
-    except ValueError:
+    if data == "bad":
         return WARN, "cursor", "last backup stamp unreadable"
     if "cursor_chats" not in data:
         return INFO, "cursor", "last backup stamp has no Cursor counts yet"
@@ -137,24 +137,88 @@ def _cleanup_check(cfg) -> tuple:
     return OK, "local cleanup", f"cleanupPeriodDays = {days} (reports exist of it being ignored; the archive is your copy)"
 
 
-def _last_backup_check(cfg, scheduled: bool = False) -> tuple:
-    raw = rclone.cat(f"{cfg.dest}/last-backup.{cfg.machine}.json")
-    if not raw:
-        return WARN, "last backup", "none yet — run: cc-chronicle backup"
+def _stamp_when(data):
+    when = datetime.fromisoformat(data["finished_at"])
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc)
+
+
+def _read_local_stamp(cfg) -> str | None:
+    path = config_mod.local_stamp_path(cfg.machine)
     try:
-        data = json.loads(raw)
-        when = datetime.fromisoformat(data["finished_at"])
-    except (ValueError, KeyError):
-        return WARN, "last backup", "stamp unreadable"
+        if path.is_file():
+            return path.read_text()
+    except OSError:
+        return None
+    return None
+
+
+def newest_stamp(cfg):
+    """The newer of the remote stamp and the local fallback.
+
+    Returns (data, raw). data is None when neither exists, or "bad" when every
+    stamp that does exist is unreadable.
+    """
+    found = []
+    bad = False
+    for raw in (rclone.cat(f"{cfg.dest}/last-backup.{cfg.machine}.json"), _read_local_stamp(cfg)):
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+            when = _stamp_when(data)
+        except (ValueError, KeyError, TypeError):
+            bad = True
+            continue
+        found.append((when, data, raw))
+    if not found:
+        return ("bad", None) if bad else (None, None)
+    _when, data, raw = max(found, key=lambda item: item[0])
+    return data, raw
+
+
+def _part_names(parts: dict) -> list:
+    names = [name for name in PARTS if name in parts]
+    names.extend(sorted(name for name in parts if name not in PARTS))
+    return names
+
+
+def _last_backup_detail(data, when) -> str:
     age = datetime.now(timezone.utc) - when
-    days = age.days
-    detail = f"{when:%Y-%m-%d %H:%M} ({days} day(s) ago)"
+    detail = f"{when:%Y-%m-%d %H:%M} ({age.days} day(s) ago)"
+    parts = data.get("parts_ok") if isinstance(data.get("parts_ok"), dict) else {}
+    failed = [str(name) for name in (data.get("failed_steps") or [])]
+    ok_bits = [f"{name} {parts[name]}" for name in _part_names(parts) if name not in failed and parts.get(name)]
+    fail_bits = []
+    for name in failed:
+        day = parts.get(name)
+        fail_bits.append(f"{name} since {day}" if day else name)
+    if ok_bits:
+        detail += "; " + ", ".join(ok_bits)
+    if fail_bits:
+        detail += "; failed: " + ", ".join(fail_bits) + " (see the run's log)"
+    return detail
+
+
+def _last_backup_check(cfg, scheduled: bool = False) -> tuple:
+    data, _raw = newest_stamp(cfg)
+    if data is None:
+        return WARN, "last backup", "none yet — run: cc-chronicle backup"
+    if data == "bad":
+        return WARN, "last backup", "stamp unreadable"
+    try:
+        when = datetime.fromisoformat(data["finished_at"])
+    except (ValueError, KeyError, TypeError):
+        return WARN, "last backup", "stamp unreadable"
+    age = datetime.now(timezone.utc) - (when if when.tzinfo else when.replace(tzinfo=timezone.utc))
+    detail = _last_backup_detail(data, when if when.tzinfo else when.replace(tzinfo=timezone.utc))
     failed = data.get("failed_steps") or []
     if failed:
-        return WARN, "last backup", f"{detail}, but these steps failed: {', '.join(failed)} (see the run's log)"
+        return WARN, "last backup", detail
     if scheduled and age > timedelta(hours=26):
         return WARN, "last backup", f"{detail}, but the daily job should have made a newer one (see the run's log)"
-    return (OK if days < 7 else WARN), "last backup", detail
+    return (OK if age.days < 7 else WARN), "last backup", detail
 
 
 def run(config_path=None, out=print) -> int:

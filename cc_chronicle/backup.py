@@ -16,9 +16,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import ChronicleError, __version__, privacy, rclone, secrets, stage
+from . import ChronicleError, __version__, doctor, privacy, rclone, secrets, stage
 from . import cursor as cursor_mod
-from .config import Config, state_dir
+from .config import Config, local_stamp_path, state_dir
 
 REMOTE_README = Path(__file__).with_name("remote_readme.md")
 
@@ -78,9 +78,10 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False,
 
     def step(name: str, *args: str, **kwargs) -> None:
         # One failed step (say, a file that kept changing) must not cost the others their upload.
+        # A network error is waited out and tried again inside rclone.transfer.
         try:
             n = rclone.transfer(*args, log_file=result.log_file, dry_run=dry_run, progress=progress,
-                                bwlimit=limit, **kwargs)
+                                bwlimit=limit, **kwargs, **_network_kwargs(cfg, out, name))
         except rclone.RcloneError as exc:
             result.failed[name] = str(exc)
             out(f"  {name:<14} FAILED: {exc}")
@@ -141,8 +142,7 @@ def backup(cfg: Config, *, dry_run: bool = False, strict_secrets: bool = False,
         step("readme", "copyto", str(REMOTE_README), f"{cfg.dest}/README.md")
 
     if not dry_run:
-        rclone.rcat(f"{cfg.dest}/last-backup.{cfg.machine}.json", stamp(cfg, result))
-        out(f"  {'stamp':<14} last-backup.{cfg.machine}.json")
+        _write_stamp(cfg, result, out)
         result.privacy = privacy.check(cfg)
         if result.privacy.status == "shared":
             out(f"  !! SHARING    the archive folder is shared: {', '.join(result.privacy.shared_with)}")
@@ -176,6 +176,63 @@ def _cursor_stage(name: str, fn, cursor_dir: Path, out_dir: Path, result: Backup
     return True
 
 
+def _network_kwargs(cfg: Config, out, name: str) -> dict:
+    def on_retry(wait, name=name):
+        out(f"  {name:<14} network error, waiting {wait}s")
+
+    return {
+        "network_retries": cfg.network_retries,
+        "network_retry_waits": cfg.network_retry_waits,
+        "retries_sleep": cfg.retries_sleep,
+        "low_level_retries": cfg.low_level_retries,
+        "on_retry": on_retry,
+    }
+
+
+def _write_stamp(cfg: Config, result: BackupResult, out) -> None:
+    text = stamp(cfg, result)
+    remote = f"{cfg.dest}/last-backup.{cfg.machine}.json"
+    try:
+        rclone.rcat(remote, text, **_network_kwargs(cfg, out, "stamp"))
+    except rclone.RcloneError as exc:
+        if not (exc.network or rclone.is_network_error(str(exc))):
+            raise
+        path = local_stamp_path(cfg.machine)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        except OSError as err:
+            raise ChronicleError(f"stamp could not be saved locally: {err}") from err
+        out(f"  {'stamp':<14} saved locally after the remote write failed")
+        return
+    out(f"  {'stamp':<14} last-backup.{cfg.machine}.json")
+
+
+def _parts_ok(cfg: Config, result: BackupResult) -> dict:
+    """Last day each part succeeded. A failure keeps the previous day."""
+    data, _raw = doctor.newest_stamp(cfg)
+    prior = {}
+    if isinstance(data, dict) and isinstance(data.get("parts_ok"), dict):
+        prior = {str(key): str(value) for key, value in data["parts_ok"].items() if value}
+    today = result.run[:10]
+    attempted = list(result.actions) + [name for name in result.failed if name not in result.actions]
+    days = {}
+    for name in attempted:
+        if name in result.failed:
+            if prior.get(name):
+                days[name] = prior[name]
+        else:
+            days[name] = today
+    ordered = {}
+    for name in doctor.PARTS:
+        if name in days:
+            ordered[name] = days[name]
+    for name in sorted(days):
+        if name not in ordered:
+            ordered[name] = days[name]
+    return ordered
+
+
 def stamp(cfg: Config, result: BackupResult) -> str:
     return json.dumps({
         "tool": "cc-chronicle",
@@ -197,4 +254,5 @@ def stamp(cfg: Config, result: BackupResult) -> str:
         "cursor_project_files": result.cursor.project_files,
         "cursor_project_bytes": result.cursor.project_bytes,
         "failed_steps": sorted(result.failed),
+        "parts_ok": _parts_ok(cfg, result),
     }, indent=2) + "\n"

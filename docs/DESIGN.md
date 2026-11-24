@@ -8,7 +8,7 @@ Why cc-chronicle works the way it does. Change a rule here first, then in the co
 |---|---|
 | **rclone does all transfers** | Bulk, incremental and resumable, with 70+ storage backends and their authentication handled by rclone. cc-chronicle never sees credentials. |
 | **One wrapper (`rclone.py`) for every rclone call** | The rules below come down to exact flags. Keeping them in one place stops a stray `sync` from deleting an archive. |
-| **Uploads are speed-capped** | On 18 Nov 2026 a ~2.9 GB Cursor upload held the home line (~50 KB/s) for ~20 hours: other work failed for ~6 hours and the 10 PM digest was 30 minutes late. Every upload (`copy`, `sync`, `copyto`) passes `--bwlimit`. Default `09:45,16k 10:30,256k 21:45,16k 22:30,256k` (local time): 16 KiB/s around the 10:00 and 22:00 digests, 256 KiB/s otherwise. `bwlimit = off` or `backup --bwlimit off` removes it. Read-only calls are uncapped. |
+| **Uploads are speed-capped** | On 18 Nov 2026 a ~2.9 GB Cursor upload held the home line (~50 KB/s) for ~20 hours: other work failed for ~6 hours and the 10 PM digest was 30 minutes late. On 24 Nov 2026 the home upload was 1 Mbps (sync 1021 kbps) and the cap was still 256 KiB/s (about 2 Mbps). The upload filled the line for hours. DNS lookups took about 1.7 s during it and 43 ms after it, and one failed lookup at the end of `cursor-chats` dropped every later step, including the stamp. Every upload (`copy`, `sync`, `copyto`) passes `--bwlimit`. Default `09:45,16k 10:30,64k 21:45,16k 22:30,64k` (local time): 16 KiB/s around the 10:00 and 22:00 digests, 64 KiB/s otherwise, about half of a 1 Mbps upload. `bwlimit = off` or `backup --bwlimit off` removes it. Read-only calls are uncapped. |
 | **Python standard library only** | Installs anywhere with nothing to resolve. Tests use pytest, but the tool doesn't. |
 
 ## What is mirrored and what is archived
@@ -26,7 +26,7 @@ Why cc-chronicle works the way it does. Change a rule here first, then in the co
 - **Bundled**: `<id>.jsonl` plus `<id>/subagents/`, `<id>/tool-results/` and `<id>/file-history/` sit together. Restoring one session restores everything it needs, including rewind snapshots. `file-history` snapshots whose session file is gone are archived under `.claude/file-history/<id>/`.
 - **Staging**: `stage.py` builds the month layout as a temporary tree of symlinks, uploaded in one `rclone copy --copy-links`. One rclone call keeps it fast and incremental.
 - **Live files are snapshotted**: a file changed in the last 24 hours is copied into the stage instead of linked. An open session keeps appending to its transcript, and rclone rejects a file that changes while it uploads (`md5 hashes differ` / `source file is being updated`). The copy is fixed; the next run picks up what was added after it. Older files stay links, so the copy stays small.
-- **One failed step doesn't stop the run**: each upload step (memory, sessions, file-history, plans, history, cursor chats, cursor projects, readme) runs even if an earlier one failed. The stamp is still written and lists `failed_steps`; `doctor` warns about them and the command exits non-zero, so the scheduled job still shows as failed.
+- **One failed step doesn't stop the run**: each upload step (memory, sessions, file-history, plans, history, cursor chats, cursor projects, readme) runs even if an earlier one failed. A network error (no such host, timeout, connection reset, connection refused, or couldn't find the Drive root directory id) waits and tries that step again: `network_retries` (default 3 more tries) and `network_retry_waits` (default 30, 90 and 180 seconds). Any other error fails that step at once. Uploads also pass rclone `--retries-sleep` (default `10s`) and `--low-level-retries` (default 10). The stamp is still written and lists `failed_steps` and `parts_ok` (the last day each part succeeded). `doctor` warns, names the parts that failed and the day they last succeeded, and the command exits non-zero, so the scheduled job still shows as failed.
 
 ## Cursor
 
@@ -44,7 +44,7 @@ On when `~/.cursor` exists, unless the config says `cursor = off`. A machine wit
 ## Per-machine files
 
 - `history.jsonl` exists on every machine under the same name, so it is archived as `history.<machine>.jsonl`. It's the only renamed file.
-- `last-backup.<machine>.json` records each machine's last run.
+- `last-backup.<machine>.json` records each machine's last run, including `parts_ok`: the last day memory, sessions, cursor-chats and the other parts succeeded. The stamp write uses the same network retries. If it still fails, the same file is written in the state directory. `doctor` reads the newer of the remote stamp and that local file, so a failed Cursor part does not hide that the Claude parts are current.
 
 ## Restore
 
@@ -70,6 +70,7 @@ On when `~/.cursor` exists, unless the config says `cursor = off`. A machine wit
 
 - `copyto` (single file) refuses filter flags, so `.DS_Store` filtering is skipped for it.
 - `--timeout 60s`: after a network switch, stalled connections are dropped and retried within a minute instead of five.
+- `--retries-sleep` and `--low-level-retries` sit on uploads and the stamp write, so rclone retries a stalled transfer before cc-chronicle starts its own longer waits.
 - Google Drive creates files one by one, so thousands of small sidecar files dominate the first upload's time, not its size.
 
 Linux CI for Python 3.9 runs on `ubuntu-24.04` because `ubuntu-latest` is Ubuntu 26.04 and `actions/setup-python` has no 3.9 build for it; the Mac that runs cc-chronicle every day is still Python 3.9, so that job stays.

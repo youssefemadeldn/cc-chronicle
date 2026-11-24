@@ -113,7 +113,11 @@ def cmd_status(args) -> int:
     cfg = _load(args)
     print(f"upload cap: {_cap_line(cfg.bwlimit)}")
     print(f"== last backup ({cfg.machine})")
-    print(rclone.cat(f"{cfg.dest}/last-backup.{cfg.machine}.json") or "  none yet\n")
+    data, raw = doctor.newest_stamp(cfg)
+    if data == "bad":
+        print("  stamp unreadable\n")
+    else:
+        print(raw or "  none yet\n")
     print("== pending (what a backup would do now)")
     backup(cfg, dry_run=True)
     return 0

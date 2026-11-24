@@ -9,7 +9,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - Uploads use a speed cap (`bwlimit`, default slow around 10:00 and 22:00) so a large backup does not take the whole home line. `backup --bwlimit off` removes it for one run.
 - Cursor chats and project files are archived next to Claude sessions (`<remote>/.cursor/`), on by default when `~/.cursor` exists. Chats are filed by start month. A live `store.db` is snapshotted with SQLite's backup API. `restore cursor <uuid>` brings one chat back without overwriting it. Set `cursor = off` to skip this.
 
+### Changed
+- The default upload cap stays at 16 KiB/s around 10:00 and 22:00, and the normal rate is 64 KiB/s. On 24 Nov 2026 the old 256 KiB/s cap was above the 1 Mbps home upload (sync 1021 kbps), so a long Cursor upload filled the line. DNS lookups took about 1.7 s during the upload and 43 ms after it, and one failed lookup at the end dropped every later step.
+
 ### Fixed
+- A network error (no such host, timeout, connection reset, connection refused, or a missing Drive root) is retried, with waits that grow to a few minutes. Uploads also pass rclone `--retries-sleep` and `--low-level-retries`. One failed lookup no longer drops the later steps.
+- If the stamp still cannot be written, the same file is saved in the state directory. `doctor` reads the newer of the remote and local stamps, shows the last day each part succeeded, and names the parts that failed and since when.
 - A session that was open during the backup failed to upload (`corrupted on transfer: md5 hashes differ`) and stopped the whole run, so plans, history and the last-backup stamp were skipped too. Files changed in the last 24 hours are now copied into the stage as a fixed snapshot. A step that still fails no longer stops the others: the stamp records `failed_steps`, `doctor` warns about them, and the command exits with an error.
 - `doctor` showed ✓ for the daily backup even when its last run had failed (`last exit code = 1`), because it only checked that the job was installed. It now warns when the last run exited non-zero, and when the job is scheduled but the last-backup stamp is more than 26 hours old.
 

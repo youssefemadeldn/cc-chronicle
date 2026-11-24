@@ -122,9 +122,18 @@ sample_hashes =
 cursor = on
 cursor_dir = /Users/me/.cursor
 # Upload speed cap (rclone --bwlimit). Timetable is local time: slow around 10:00 and 22:00.
-# "off" removes the cap. `cc-chronicle backup --bwlimit VALUE` overrides this for one run.
-bwlimit = 09:45,16k 10:30,256k 21:45,16k 22:30,256k
+# Normal rate is 64 KiB/s, about half of a 1 Mbps upload. "off" removes the cap.
+# `cc-chronicle backup --bwlimit VALUE` overrides this for one run.
+bwlimit = 09:45,16k 10:30,64k 21:45,16k 22:30,64k
+# Extra tries after a network error, then seconds to wait before each one.
+network_retries = 3
+network_retry_waits = 30,90,180
+# Passed through to rclone on uploads and the stamp write.
+retries_sleep = 10s
+low_level_retries = 10
 ```
+
+A network error waits and retries that step. If the last-backup stamp still cannot be written, the same file is saved in the state directory and `doctor` uses the newer of the two. The last-backup line names each part's last successful day, and the parts that failed and since when.
 
 No credentials are stored here: rclone keeps those in its own config.
 
